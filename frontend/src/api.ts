@@ -30,6 +30,72 @@ export type DashboardSummary = {
   total_units_sold: number;
 };
 
+export type DashboardCategoryCount = {
+  label: string;
+  value: number;
+};
+
+export type DashboardMarketplaceMix = {
+  marketplace: string;
+  listings: number;
+  avg_price: number;
+};
+
+export type DashboardRevenuePoint = {
+  day: string;
+  revenue: number;
+  units: number;
+};
+
+export type DashboardTopListing = {
+  sku: string;
+  title: string;
+  marketplace: string;
+  status: string;
+  quantity: number;
+  price: number;
+  competitor_low_price: number | null;
+  revenue: number;
+  units_sold: number;
+};
+
+export type DashboardRecentSale = {
+  sale_date: string;
+  sku: string;
+  title: string;
+  units_sold: number;
+  revenue: number;
+};
+
+export type DashboardAgentRun = {
+  name: string;
+  task_type: string;
+  status: string;
+  created_at: string;
+};
+
+export type DashboardOverview = {
+  source: string;
+  seller_display_name: string;
+  company_name: string | null;
+  total_listings: number;
+  active_listings: number;
+  low_stock_items: number;
+  total_sales: number;
+  total_units_sold: number;
+  average_listing_price: number;
+  prime_listings: number;
+  total_agents: number;
+  marketplace_mix: DashboardMarketplaceMix[];
+  revenue_trend: DashboardRevenuePoint[];
+  top_listings: DashboardTopListing[];
+  recent_sales: DashboardRecentSale[];
+  agent_status: DashboardCategoryCount[];
+  recent_agent_runs: DashboardAgentRun[];
+  listing_status: DashboardCategoryCount[];
+  inventory_bands: DashboardCategoryCount[];
+};
+
 export type OrderItemInput = {
   product_id: number;
   quantity: number;
@@ -42,6 +108,7 @@ export type Order = {
   order_number: string;
   marketplace: string;
   total_amount: number;
+  created_at: string;
   items: Array<{
     id: number;
     product_id: number;
@@ -97,8 +164,26 @@ async function request<T>(
   });
 
   if (!response.ok) {
-    const body = await response.json().catch(() => ({ detail: "Request failed" }));
-    throw new Error(body.detail || "Request failed");
+    const body = await response.json().catch(() => null);
+    // If the backend returns Pydantic validation errors, it will be an object with
+    // a `detail` array. Include that in the thrown error so the UI can display it.
+    let errMsg = "Request failed";
+    if (body) {
+      if (body.detail) {
+        try {
+          errMsg = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
+        } catch (e) {
+          errMsg = String(body.detail);
+        }
+      } else {
+        try {
+          errMsg = JSON.stringify(body);
+        } catch (e) {
+          errMsg = String(body);
+        }
+      }
+    }
+    throw new Error(errMsg);
   }
 
   if (response.status === 204) {
@@ -123,6 +208,9 @@ export const api = {
   me(token: string) {
     return request<User>("/auth/me", { method: "GET" }, token);
   },
+  getOverview(token: string) {
+    return request<DashboardOverview>("/dashboard/overview", { method: "GET" }, token);
+  },
   getSummary(token: string) {
     return request<DashboardSummary>("/dashboard/summary", { method: "GET" }, token);
   },
@@ -142,8 +230,26 @@ export const api = {
       token
     );
   },
-  listOrders(token: string) {
-    return request<Order[]>("/orders", { method: "GET" }, token);
+  updateProduct(
+    token: string,
+    id: number,
+    payload: Partial<Omit<Product, "id" | "seller_id">>
+  ) {
+    return request<Product>(
+      `/products/${id}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      },
+      token
+    );
+  },
+  deleteProduct(token: string, id: number) {
+    return request<void>(`/products/${id}`, { method: "DELETE" }, token);
+  },
+  listOrders(token: string, search?: string) {
+    const url = search ? `/orders?search=${encodeURIComponent(search)}` : "/orders";
+    return request<Order[]>(url, { method: "GET" }, token);
   },
   createOrder(
     token: string,

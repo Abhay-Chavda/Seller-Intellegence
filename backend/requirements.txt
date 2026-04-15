@@ -6,7 +6,9 @@ python-jose[cryptography]
 passlib[bcrypt]
 python-multipart
 pydantic-settings
+python-dotenv
 email-validator
+httpx
 joblib
 numpy
 scikit-learn

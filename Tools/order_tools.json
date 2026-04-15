@@ -1,0 +1,45 @@
+{
+  "domain": "orders",
+  "tools": [
+    {
+      "name": "list_orders",
+      "method": "POST",
+      "path": "/tools/list_orders",
+      "arguments": {
+        "type": "object",
+        "properties": {
+          "search": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "create_order",
+      "method": "POST",
+      "path": "/tools/create_order",
+      "arguments": {
+        "type": "object",
+        "required": ["order_number", "marketplace", "items"],
+        "properties": {
+          "order_number": { "type": "string" },
+          "marketplace": { "type": "string" },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["product_id", "quantity", "unit_price"],
+              "properties": {
+                "product_id": { "type": "integer" },
+                "quantity": { "type": "integer", "minimum": 1 },
+                "unit_price": { "type": "number", "minimum": 0 }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  ]
+}

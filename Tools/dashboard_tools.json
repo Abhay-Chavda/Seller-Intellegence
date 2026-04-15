@@ -1,0 +1,25 @@
+{
+  "domain": "dashboard",
+  "tools": [
+    {
+      "name": "get_dashboard_overview",
+      "method": "POST",
+      "path": "/tools/get_dashboard_overview",
+      "arguments": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_dashboard_summary",
+      "method": "POST",
+      "path": "/tools/get_dashboard_summary",
+      "arguments": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    }
+  ]
+}

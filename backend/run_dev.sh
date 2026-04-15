@@ -4,4 +4,9 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+
+if [[ -x "$ROOT/backend/.venv/bin/python" ]]; then
+  exec "$ROOT/backend/.venv/bin/python" -m uvicorn app.main:app --reload --app-dir backend --reload-dir backend/app
+fi
+
 exec uvicorn app.main:app --reload --app-dir backend --reload-dir backend/app

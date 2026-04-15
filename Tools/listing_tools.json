@@ -1,0 +1,66 @@
+{
+  "domain": "listings",
+  "tools": [
+    {
+      "name": "list_products",
+      "method": "POST",
+      "path": "/tools/list_products",
+      "arguments": {
+        "type": "object",
+        "properties": {
+          "search": { "type": "string" },
+          "include_archived": { "type": "boolean", "default": false }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "create_product",
+      "method": "POST",
+      "path": "/tools/create_product",
+      "arguments": {
+        "type": "object",
+        "required": ["title", "sku", "sell_price", "stock", "marketplace"],
+        "properties": {
+          "title": { "type": "string" },
+          "sku": { "type": "string" },
+          "sell_price": { "type": "number", "minimum": 0 },
+          "stock": { "type": "integer", "minimum": 0 },
+          "marketplace": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "update_product",
+      "method": "POST",
+      "path": "/tools/update_product",
+      "arguments": {
+        "type": "object",
+        "required": ["product_id"],
+        "properties": {
+          "product_id": { "type": "integer", "minimum": 1 },
+          "title": { "type": "string" },
+          "sku": { "type": "string" },
+          "sell_price": { "type": "number", "minimum": 0 },
+          "stock": { "type": "integer", "minimum": 0 },
+          "marketplace": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "archive_product",
+      "method": "POST",
+      "path": "/tools/archive_product",
+      "arguments": {
+        "type": "object",
+        "required": ["product_id"],
+        "properties": {
+          "product_id": { "type": "integer", "minimum": 1 }
+        },
+        "additionalProperties": false
+      }
+    }
+  ]
+}

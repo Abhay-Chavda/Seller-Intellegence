@@ -1,0 +1,3 @@
+INFO:     Will watch for changes in these directories: ['/Users/abhaychavda/Documents/GitHub/Seller-Intellegence/backend/app']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [29233] using WatchFiles

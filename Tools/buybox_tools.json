@@ -1,0 +1,23 @@
+{
+  "domain": "buybox",
+  "tools": [
+    {
+      "name": "predict_buybox",
+      "method": "POST",
+      "path": "/tools/predict_buybox",
+      "arguments": {
+        "type": "object",
+        "required": ["sku", "SellPrice", "MinCompetitorPrice"],
+        "properties": {
+          "sku": { "type": "string" },
+          "SellPrice": { "type": "number" },
+          "ShippingPrice": { "type": "number" },
+          "MinCompetitorPrice": { "type": "number" },
+          "PositiveFeedbackPercent": { "type": "number" },
+          "IsFBA": { "type": "number" }
+        },
+        "additionalProperties": false
+      }
+    }
+  ]
+}

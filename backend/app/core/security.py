@@ -5,16 +5,18 @@ from passlib.context import CryptContext
 
 from app.core.config import get_settings
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["bcrypt", "pbkdf2_sha256"], deprecated="auto")
 settings = get_settings()
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    # No hashing used, perform direct string comparison
+    return plain_password == hashed_password
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    # No hashing used, just return the plain password
+    return password
 
 
 def create_access_token(subject: str) -> str:

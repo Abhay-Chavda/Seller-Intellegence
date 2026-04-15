@@ -9,11 +9,16 @@ settings = get_settings()
 class Base(DeclarativeBase):
     pass
 
+if settings.database_schema and settings.database_schema != "public":
+    Base.metadata.schema = settings.database_schema
+
 
 is_sqlite = settings.database_url.startswith("sqlite")
+connect_args = {"check_same_thread": False} if is_sqlite else {}
+
 engine = create_engine(
     settings.database_url,
-    connect_args={"check_same_thread": False} if is_sqlite else {},
+    connect_args=connect_args,
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
