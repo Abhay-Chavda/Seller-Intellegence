@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     buybox_model_path: str = "backend/model/best_model.pkl"
     buybox_api_url: str = ""
     buybox_api_timeout_seconds: float = 8.0
+    foundry_project_endpoint: str = ""
+    foundry_model_deployment_name: str = ""
+    foundry_tools_openapi_url: str = ""
+    foundry_agent_name_prefix: str = "seller-intelligence-agent"
 
     @property
     def cors_origin_list(self) -> list[str]:

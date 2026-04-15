@@ -113,6 +113,8 @@ Tools-only API exposes:
 - `POST /tools/list_orders`
 - `POST /tools/create_order`
 - `POST /tools/predict_buybox`
+- `GET /foundry/agent`
+- `POST /foundry/agent/create`
 
 ## Azure Foundry integration
 
@@ -125,6 +127,15 @@ Auth for tool calls:
 
 - Header: `Authorization: Bearer <access_token>`
 - Generate token via `POST /auth/login`
+
+Create one Foundry agent per user:
+
+- Call `POST /foundry/agent/create` with body:
+  - `connection_id` (required): Foundry project connection ID for that user's Bearer token
+  - `openapi_spec` (optional): inline OpenAPI JSON object
+  - `openapi_spec_url` (optional): defaults to `FOUNDRY_TOOLS_OPENAPI_URL` if configured
+  - `agent_name` (optional): defaults to `seller-intelligence-agent-<user_id>`
+- Call `GET /foundry/agent` to fetch the saved agent mapping for the logged-in user.
 
 ## Tool metadata files
 

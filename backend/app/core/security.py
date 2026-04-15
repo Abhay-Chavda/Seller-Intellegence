@@ -22,18 +22,26 @@ def hash_password(password: str) -> str:
 
 
 def create_access_token(subject: str) -> str:
+    normalized_subject = subject.strip().lower()
     expire = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expire_minutes)
-    to_encode = {"sub": subject, "exp": expire}
+    to_encode = {"sub": normalized_subject, "exp": expire}
     return jwt.encode(to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
 def decode_access_token(token: str) -> str | None:
     try:
+        cleaned = token.strip()
+        if cleaned.lower().startswith("bearer "):
+            cleaned = cleaned[7:].strip()
         payload = jwt.decode(
-            token,
+            cleaned,
             settings.jwt_secret_key,
             algorithms=[settings.jwt_algorithm],
         )
-        return payload.get("sub")
+        subject = payload.get("sub")
+        if not isinstance(subject, str):
+            return None
+        normalized_subject = subject.strip().lower()
+        return normalized_subject or None
     except JWTError:
         return None

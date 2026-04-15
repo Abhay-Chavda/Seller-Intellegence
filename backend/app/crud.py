@@ -6,7 +6,16 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.security import hash_password
-from app.models import AgentTask, BuyboxPrediction, CompetitorPriceRecord, Order, OrderItem, Product, User
+from app.models import (
+    AgentTask,
+    BuyboxPrediction,
+    CompetitorPriceRecord,
+    Order,
+    OrderItem,
+    Product,
+    User,
+    UserFoundryAgent,
+)
 from app.schemas import (
     BuyboxFeatureInput,
     OrderCreate,
@@ -17,9 +26,10 @@ from app.schemas import (
 
 
 def create_user(db: Session, payload: UserCreate) -> User:
+    normalized_email = payload.email.strip().lower()
     user = User(
         name=payload.name,
-        email=payload.email.lower(),
+        email=normalized_email,
         hashed_password=hash_password(payload.password),
     )
     db.add(user)
@@ -29,7 +39,8 @@ def create_user(db: Session, payload: UserCreate) -> User:
 
 
 def get_user_by_email(db: Session, email: str) -> User | None:
-    return db.scalar(select(User).where(User.email == email.lower()))
+    normalized_email = email.strip().lower()
+    return db.scalar(select(User).where(User.email == normalized_email))
 
 
 def create_product(db: Session, seller_id: int, payload: ProductCreate) -> Product:
@@ -248,6 +259,37 @@ def create_agent_task(
     db.commit()
     db.refresh(task)
     return task
+
+
+def get_user_foundry_agent(db: Session, seller_id: int) -> UserFoundryAgent | None:
+    return db.scalar(select(UserFoundryAgent).where(UserFoundryAgent.seller_id == seller_id))
+
+
+def create_user_foundry_agent(
+    db: Session,
+    seller_id: int,
+    agent_name: str,
+    agent_version: str,
+    model: str,
+    connection_id: str,
+    openapi_spec_url: str,
+) -> UserFoundryAgent:
+    record = UserFoundryAgent(
+        seller_id=seller_id,
+        agent_name=agent_name,
+        agent_version=agent_version,
+        model=model,
+        connection_id=connection_id,
+        openapi_spec_url=openapi_spec_url,
+    )
+    db.add(record)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise ValueError("Foundry agent already exists for this user") from exc
+    db.refresh(record)
+    return record
 
 
 def get_dashboard_overview(db: Session, user: User) -> dict:

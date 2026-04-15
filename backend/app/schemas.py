@@ -137,6 +137,33 @@ class AgentChatResponse(BaseModel):
     result: str
 
 
+class FoundryAgentCreateRequest(BaseModel):
+    connection_id: str = Field(min_length=1)
+    openapi_spec: dict[str, Any] | None = None
+    openapi_spec_url: str | None = None
+    agent_name: str | None = None
+
+
+class FoundryAgentOut(BaseModel):
+    id: int
+    seller_id: int
+    agent_name: str
+    agent_version: str
+    model: str
+    connection_id: str
+    openapi_spec_url: str
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class FoundryAgentCreateResponse(BaseModel):
+    created: bool
+    agent: FoundryAgentOut
+
+
 class DashboardCategoryCount(BaseModel):
     label: str
     value: int

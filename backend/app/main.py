@@ -2,6 +2,7 @@ from fastapi import Body, Depends, FastAPI, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+import httpx
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
@@ -10,12 +11,13 @@ from app.core.config import get_settings
 from app.core.security import create_access_token, decode_access_token, verify_password
 from app.db import Base, engine, get_db
 from app.services.agent import run_agent_task
+from app.services.foundry_agent import create_user_foundry_agent, get_user_foundry_agent
 from app.services.predictor import predictor
 from app.tools import build_foundry_manifest, execute_tool, list_tool_definitions
 
 app = FastAPI(title="Seller Intelligence API", version="0.1.0")
 settings = get_settings()
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 app.add_middleware(
     CORSMiddleware,
@@ -29,10 +31,15 @@ Base.metadata.create_all(bind=engine)
 
 
 def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
     db: Session = Depends(get_db),
 ) -> models.User:
-    token = credentials.credentials
+    token = credentials.credentials.strip() if credentials and credentials.credentials else ""
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing Authorization header",
+        )
     subject = decode_access_token(token)
     if subject is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
@@ -78,6 +85,39 @@ def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
 @app.get("/auth/me", response_model=schemas.UserOut)
 def me(current_user: models.User = Depends(get_current_user)):
     return current_user
+
+
+@app.get("/foundry/agent", response_model=schemas.FoundryAgentOut)
+def get_foundry_agent(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    record = get_user_foundry_agent(db=db, user=current_user)
+    if record is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Foundry agent not created")
+    return record
+
+
+@app.post("/foundry/agent/create", response_model=schemas.FoundryAgentCreateResponse)
+def create_foundry_agent(
+    payload: schemas.FoundryAgentCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    try:
+        return create_user_foundry_agent(db=db, user=current_user, payload=payload)
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to fetch OpenAPI spec: {exc}",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to create Foundry agent: {exc}",
+        ) from exc
 
 
 @app.get("/dashboard/summary", response_model=schemas.DashboardSummary)

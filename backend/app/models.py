@@ -33,6 +33,10 @@ class User(Base):
     orders: Mapped[list["Order"]] = relationship(back_populates="seller")
     predictions: Mapped[list["BuyboxPrediction"]] = relationship(back_populates="seller")
     agent_tasks: Mapped[list["AgentTask"]] = relationship(back_populates="seller")
+    foundry_agent: Mapped["UserFoundryAgent"] = relationship(
+        back_populates="seller",
+        uselist=False,
+    )
 
 
 class Product(Base):
@@ -142,3 +146,26 @@ class CompetitorPriceRecord(Base):
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     product: Mapped["Product"] = relationship(backref="competitor_history")
+
+
+class UserFoundryAgent(Base):
+    __tablename__ = "user_foundry_agents"
+    __table_args__ = (
+        UniqueConstraint("seller_id", name="uq_user_foundry_agents_seller_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    seller_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    agent_name: Mapped[str] = mapped_column(String(200), index=True)
+    agent_version: Mapped[str] = mapped_column(String(40))
+    model: Mapped[str] = mapped_column(String(120))
+    connection_id: Mapped[str] = mapped_column(String(500))
+    openapi_spec_url: Mapped[str] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
+    seller: Mapped["User"] = relationship(back_populates="foundry_agent")

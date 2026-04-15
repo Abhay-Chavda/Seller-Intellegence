@@ -12,3 +12,5 @@ httpx
 joblib
 numpy
 scikit-learn
+azure-ai-projects
+azure-identity
