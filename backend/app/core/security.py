@@ -10,13 +10,15 @@ settings = get_settings()
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    # No hashing used, perform direct string comparison
-    return plain_password == hashed_password
+    try:
+        return pwd_context.verify(plain_password, hashed_password)
+    except (ValueError, TypeError):
+        # Backward-compatibility for legacy plain-text rows.
+        return plain_password == hashed_password
 
 
 def hash_password(password: str) -> str:
-    # No hashing used, just return the plain password
-    return password
+    return pwd_context.hash(password)
 
 
 def create_access_token(subject: str) -> str:

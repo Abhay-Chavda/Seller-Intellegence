@@ -1,118 +1,109 @@
-# Seller Intelligence Platform
+# Seller Intelligence
 
-## 📌 Overview
+Seller Intelligence is a FastAPI backend for seller operations and AI tool-calling.
 
-A backend system designed to help sellers manage products, track orders, and gain insights using data analytics and intelligent automation.
+## What this repo contains
 
----
+- `backend/`: FastAPI backend, SQLAlchemy models, tool implementations
+- `frontend/`: React frontend
+- `Tools/`: Azure Foundry tool metadata files
+- `render.yaml`: Render blueprint for tools-only API deployment
 
-## 🚀 Features
+## Backend architecture
 
-* Product and inventory management
-* Order tracking system
-* BuyBox price prediction integration
-* Agent-based automation (in progress)
+Two backend entrypoints are available:
 
----
+- Full API: `app.main:app`
+  - Includes auth, dashboard, products, orders, prediction, agent chat, and tools routes.
+- Tools-only API: `app.tools_api.app:app`
+  - Dedicated API for Foundry integration.
+  - Includes only auth + `/tools/*` routes.
 
-## 🛠️ Tech Stack
+## Tool implementation (Python)
 
-<<<<<<< Updated upstream
-* Python
-* FastAPI / Backend APIs
-* Database (SQLite / PostgreSQL)
-=======
-1. From the **project root** (`WADReact/`), create and activate a virtual environment:
-   - `python3 -m venv .venv`
-   - `source .venv/bin/activate` (macOS/Linux) or `.venv\Scripts\activate` (Windows)
-2. Install **all** backend dependencies (required — do not skip):
-   - `pip install -r backend/requirements.txt`
-3. Create environment file:
-   - Copy `backend/.env.example` to `backend/.env`
-   - Set `DATABASE_URL` to your Neon connection string
-4. Apply DB migrations (required for existing databases):
-   - `python backend/run_migrations.py`
-5. Run the API **using the same venv** where you ran `pip install`:
-   - `uvicorn app.main:app --reload --app-dir backend --reload-dir backend/app`
->>>>>>> Stashed changes
+Tools are implemented file-wise by domain in `backend/app/tools/`:
 
----
+- `dashboard_tools.py`
+- `listing_tools.py`
+- `order_tools.py`
+- `buybox_tools.py`
+- `registry.py` (combines all tools)
 
-## 📂 Project Structure
+## Setup
 
-```
-app/
- ├── routes/
- ├── models/
- ├── services/
- └── database/
-```
-
----
-
-## ▶️ How to Run
+From repo root:
 
 ```bash
-pip install -r requirements.txt
-python main.py
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r backend/requirements.txt
 ```
 
----
+For frontend local work:
 
-## 📊 Future Improvements
+```bash
+cd frontend && npm install
+```
 
-* AI agent integration for automation
-* Dashboard UI
-* Advanced analytics
+Create env file:
 
----
+```bash
+cp backend/.env.example backend/.env
+```
 
-## ⚠️ Status
+Set required values in `backend/.env`:
 
-🚧 Work in progress — actively developing new features
+- `DATABASE_URL`
+- `JWT_SECRET_KEY`
+- `DATABASE_SCHEMA` (if using non-public schema)
+- `BUYBOX_API_URL` (optional external model API)
+- `BUYBOX_API_TIMEOUT_SECONDS` (optional)
 
----
+## Run locally
 
-## 👨‍💻 Author
+Full API:
 
-<<<<<<< Updated upstream
-Abhay Chavda
-=======
-- Restart uvicorn after editing `.env`.
+```bash
+uvicorn app.main:app --reload --app-dir backend --reload-dir backend/app
+```
 
-### Opening the API in the browser
+Tools-only API:
 
-- `http://127.0.0.1:8000/` redirects to `/docs` (Swagger UI).
-- The seller UI is the React app: `npm run dev` → usually `http://localhost:5173`.
+```bash
+uvicorn app.tools_api.app:app --reload --app-dir backend --reload-dir backend/app
+```
 
-## Frontend Setup
+or:
 
-1. Install dependencies:
-   - `cd frontend && npm install`
-2. Run dev server:
-   - `npm run dev`
+```bash
+./backend/run_tools_api.sh
+```
 
-App runs at `http://localhost:5173`.
+## Render deployment
 
-## Neon DB Notes
+If deploying tools-only API (recommended for Foundry):
 
-- Use a Neon Postgres URL in `backend/.env`.
-- For quick local testing, default SQLite works if `DATABASE_URL` is omitted.
-- Migrations live in `backend/migrations/postgres/` and are applied using `python backend/run_migrations.py`.
+- Build command:
+  - `pip install -r backend/requirements.txt`
+- Start command:
+  - `uvicorn app.tools_api.app:app --host 0.0.0.0 --port $PORT --app-dir backend`
+- Or use `render.yaml` blueprint in this repo.
 
-## API Endpoints Added in Phase 2
+If deploying full API:
 
-- `GET /orders`
-- `POST /orders`
-- `POST /predict/buybox`
-- `POST /agent/chat`
+- Start command:
+  - `uvicorn app.main:app --host 0.0.0.0 --port $PORT --app-dir backend`
 
-## Tool APIs for Azure Foundry
+## Tools API endpoints
 
-The backend now exposes dedicated tool endpoints for Azure Foundry agent tool-calling:
+Tools-only API exposes:
 
-- `GET /tools` (tool catalog + schemas)
-- `POST /tools/invoke` (dynamic invocation by tool name)
+- `POST /auth/signup`
+- `POST /auth/login`
+- `GET /auth/me`
+- `GET /tools`
+- `GET /tools/foundry-manifest`
+- `POST /tools/invoke`
 - `POST /tools/get_dashboard_overview`
 - `POST /tools/get_dashboard_summary`
 - `POST /tools/list_products`
@@ -122,40 +113,39 @@ The backend now exposes dedicated tool endpoints for Azure Foundry agent tool-ca
 - `POST /tools/list_orders`
 - `POST /tools/create_order`
 - `POST /tools/predict_buybox`
-- `GET /tools/foundry-manifest` (Render-friendly JSON manifest for Azure Foundry)
 
-Tool metadata for registration lives in:
+## Azure Foundry integration
 
-- `Tools/seller_intelligence_tools.json`
-- `Tools/dashboard_tools.json`
-- `Tools/listing_tools.json`
-- `Tools/order_tools.json`
-- `Tools/buybox_tools.json`
-- `Tools/README.md`
+Use one of these URLs from your deployed service:
 
-Tool implementation files are grouped by domain in `backend/app/tools/`.
+- OpenAPI spec: `https://<your-domain>/openapi.json`
+- Tool manifest: `https://<your-domain>/tools/foundry-manifest`
 
-## Demo Data (Orders)
+Auth for tool calls:
 
-- Seed fake demo orders for all sellers with active products:
-  - `python backend/seed_demo_orders.py --orders-per-seller 8`
-- Demo order numbers are prefixed with `DEMO-YYYYMMDD-...`, so you can search them easily from Orders UI/API.
+- Header: `Authorization: Bearer <access_token>`
+- Generate token via `POST /auth/login`
 
-## Model File
+## Tool metadata files
 
-- Default path: `backend/model/best_model.pkl` (or set `BUYBOX_MODEL_PATH` in `backend/.env`).
-- External model API can be configured with `BUYBOX_API_URL` (+ optional `BUYBOX_API_TIMEOUT_SECONDS`).
-- `scikit-learn` is listed in `requirements.txt` so pickled sklearn models can load.
-- If the model file is missing or fails to load, the fallback heuristic predictor is used for demo continuity.
+JSON metadata files are in `Tools/`:
 
-## Next Phase (Planned)
+- `seller_intelligence_tools.json` (combined)
+- `dashboard_tools.json`
+- `listing_tools.json`
+- `order_tools.json`
+- `buybox_tools.json`
 
-- Azure Foundry live LLM integration in agent orchestration layer
-- Marketplace listing-level analytics and charts
-- Prediction history UI and exports
+## Core tables used by tools
 
-## Project Documentation
+- `products`
+- `orders`
+- `order_items`
+- `buybox_predictions`
+- `competitor_price_records`
 
-- Architecture and design reasoning: `docs/architecture.md`
-- Viva preparation Q&A: `docs/viva-qa.md`
->>>>>>> Stashed changes
+## Notes
+
+- `/tools/foundry-manifest` is public metadata only.
+- `/tools/*` operations require auth.
+- Generated artifacts (`node_modules`, `dist`, logs, caches, `.env`, local DB files) are ignored by `.gitignore`.

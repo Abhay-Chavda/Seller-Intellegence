@@ -10,6 +10,8 @@ This folder contains Azure Foundry tool metadata for Seller Intelligence.
   - `buybox_tools.json`
 - Backend tool endpoints are exposed under `/tools/*` in FastAPI.
 - Render JSON manifest endpoint: `/tools/foundry-manifest`
+- Recommended dedicated API entrypoint for deployment: `app.tools_api.app:app`
+- Optional Render blueprint: `render.yaml`
 
 ## Backend Tool Folder Structure
 
@@ -20,6 +22,8 @@ Tools are now organized file-wise in `backend/app/tools`:
 - `order_tools.py` -> order tools
 - `buybox_tools.py` -> buybox prediction tool
 - `registry.py` -> combined registry used by APIs
+
+Dedicated tools API routes live in `backend/app/tools_api/`.
 
 ## Tool-to-table mapping
 

@@ -1,0 +1,43 @@
+# macOS
+.DS_Store
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.venv/
+backend/.venv/
+.pytest_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+
+# Logs and pids
+*.log
+*.pid
+
+# Local databases / temporary data
+*.db
+*.sqlite
+*.sqlite3
+
+# Frontend build artifacts
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/tsconfig.tsbuildinfo
+
+# IDE/editor
+.vscode/
+.idea/
+*.swp
+*.swo
