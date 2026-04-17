@@ -4,7 +4,7 @@ services:
     env: python
     plan: free
     buildCommand: pip install -r azure_tools_api/requirements.txt
-    startCommand: uvicorn azure_tools_api.main:app --host 0.0.0.0 --port $PORT --app-dir .
+    startCommand: uvicorn azure_tools_api.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
