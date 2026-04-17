@@ -149,6 +149,29 @@ export type AgentResponse = {
   result: string;
 };
 
+export type FoundryAgent = {
+  id: number;
+  seller_id: number;
+  agent_name: string;
+  agent_version: string;
+  model: string;
+  connection_id: string;
+  openapi_spec_url: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CreateFoundryAgentPayload = {
+  connection_id?: string;
+  openapi_spec_url?: string;
+  agent_name?: string;
+};
+
+export type FoundryAgentCreateResponse = {
+  created: boolean;
+  agent: FoundryAgent;
+};
+
 async function request<T>(
   path: string,
   options: RequestInit = {},
@@ -267,6 +290,19 @@ export const api = {
   predictBuybox(token: string, payload: BuyboxInput) {
     return request<BuyboxPrediction>(
       "/predict/buybox",
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+      token
+    );
+  },
+  getFoundryAgent(token: string) {
+    return request<FoundryAgent>("/foundry/agent", { method: "GET" }, token);
+  },
+  createFoundryAgent(token: string, payload: CreateFoundryAgentPayload = {}) {
+    return request<FoundryAgentCreateResponse>(
+      "/foundry/agent/create",
       {
         method: "POST",
         body: JSON.stringify(payload),

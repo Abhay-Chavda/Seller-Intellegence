@@ -4,9 +4,9 @@ import {
   api,
   BuyboxInput,
   BuyboxPrediction,
-  DashboardCategoryCount,
   DashboardOverview,
   DashboardRevenuePoint,
+  FoundryAgent,
   Order,
   Product,
   User,
@@ -15,6 +15,11 @@ import {
 type AuthMode = "login" | "signup";
 type DashboardPage = "overview" | "inventory" | "orders" | "ai";
 type NoticeTone = "error" | "success";
+type AgentChatMessage = {
+  role: "you" | "agent";
+  text: string;
+  created_at: string;
+};
 
 const dashboardPages: Array<{ id: DashboardPage; label: string; icon: string }> = [
   { id: "overview", label: "Dashboard", icon: "📊" },
@@ -40,6 +45,15 @@ function formatShortDate(value: string): string {
   }
 }
 
+function formatShortTime(value: string): string {
+  if (!value) return "N/A";
+  try {
+    return new Intl.DateTimeFormat("en-US", { hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+  } catch (e) {
+    return "N/A";
+  }
+}
+
 function downloadCSV(data: any[], filename: string) {
   if (data.length === 0) return;
   const headers = Object.keys(data[0]).join(",");
@@ -55,6 +69,12 @@ function downloadCSV(data: any[], filename: string) {
 }
 
 const COLORS = ['#6366f1', '#a855f7', '#ec4899', '#22d3ee', '#10b981', '#f59e0b'];
+const LOW_STOCK_LIMIT = 10;
+const QUICK_RESTOCK_UNITS = 10;
+
+function getGeneratedOrderNumber(): string {
+  return `ORD-${Date.now().toString().slice(-8)}`;
+}
 
 export default function App() {
   const [token, setToken] = useState<string>(() => localStorage.getItem("token") || "");
@@ -73,7 +93,14 @@ export default function App() {
   const [messageTone, setMessageTone] = useState<NoticeTone>("success");
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isAddingProduct, setIsAddingProduct] = useState(false);
-  const [thinkingLog, setThinkingLog] = useState<string[]>([]);
+  const [isAddingOrder, setIsAddingOrder] = useState(false);
+  const [restockingProductId, setRestockingProductId] = useState<number | null>(null);
+  const [dashboardDays, setDashboardDays] = useState(14);
+  const [ordersFrom, setOrdersFrom] = useState("");
+  const [ordersTo, setOrdersTo] = useState("");
+  const [chatPrompt, setChatPrompt] = useState("");
+  const [chatHistory, setChatHistory] = useState<AgentChatMessage[]>([]);
+  const [isChatting, setIsChatting] = useState(false);
   const [newProduct, setNewProduct] = useState<Omit<Product, "id" | "seller_id">>({
     title: "",
     sku: "",
@@ -81,7 +108,16 @@ export default function App() {
     stock: 0,
     marketplace: "Amazon",
   });
+  const [newOrder, setNewOrder] = useState({
+    order_number: "",
+    marketplace: "Amazon",
+    product_id: 0,
+    quantity: 1,
+    unit_price: 0,
+  });
   const [prediction, setPrediction] = useState<BuyboxPrediction | null>(null);
+  const [foundryAgent, setFoundryAgent] = useState<FoundryAgent | null>(null);
+  const [isCreatingAgent, setIsCreatingAgent] = useState(false);
   const [buyboxInput, setBuyboxInput] = useState<BuyboxInput>({
     sku: "",
     SellPrice: 0,
@@ -175,27 +211,122 @@ export default function App() {
     }
   }
 
-  useEffect(() => {
-    const messages = [
-      "Neural agent initialized...",
-      "Analyzing marketplace saturation...",
-      "Scanning Walmart competitor nodes...",
-      "Cross-referencing SKU-984 across Shopify...",
-      "Calculating real-time market price rank...",
-      "Engineering 18-point feature vector...",
-      "Analyzing feedback gap vs market leader...",
-      "Recalculating price elasticity for high-demand items...",
-      "Agent: Buying signal detected for Amazon electronics.",
-      "Optimizing buybox win-rate for SKU-001...",
-      "Neural weights updated for Q2 seasonality...",
-    ];
-    let i = 0;
-    const interval = setInterval(() => {
-      setThinkingLog(prev => [messages[i % messages.length], ...prev].slice(0, 8));
-      i++;
-    }, 4500);
-    return () => clearInterval(interval);
-  }, []);
+  async function onCreateFoundryAgent() {
+    if (!confirm("Create Foundry agent now?")) return;
+
+    setIsCreatingAgent(true);
+    try {
+      const response = await api.createFoundryAgent(token);
+      setFoundryAgent(response.agent);
+      setMessage(response.created ? "Foundry agent created successfully." : "Foundry agent already exists.");
+      setMessageTone("success");
+    } catch (err) {
+      setMessage("Failed to create Foundry agent. Check backend env + connection ID.");
+      setMessageTone("error");
+    } finally {
+      setIsCreatingAgent(false);
+    }
+  }
+
+  async function onQuickRestock(product: Product) {
+    setRestockingProductId(product.id);
+    try {
+      await api.updateProduct(token, product.id, {
+        stock: product.stock + QUICK_RESTOCK_UNITS,
+      });
+      setMessage(`Restocked ${product.sku} by +${QUICK_RESTOCK_UNITS} units.`);
+      setMessageTone("success");
+      refreshData(token);
+    } catch (err) {
+      setMessage("Quick restock failed.");
+      setMessageTone("error");
+    } finally {
+      setRestockingProductId(null);
+    }
+  }
+
+  function onOpenCreateOrderModal() {
+    if (products.length === 0) {
+      setMessage("Please add a product before creating an order.");
+      setMessageTone("error");
+      return;
+    }
+
+    const firstProduct = products[0];
+    setNewOrder({
+      order_number: getGeneratedOrderNumber(),
+      marketplace: firstProduct.marketplace || "Amazon",
+      product_id: firstProduct.id,
+      quantity: 1,
+      unit_price: firstProduct.sell_price,
+    });
+    setIsAddingOrder(true);
+  }
+
+  async function onCreateOrder(e: FormEvent) {
+    e.preventDefault();
+    if (!newOrder.product_id) {
+      setMessage("Select a product first.");
+      setMessageTone("error");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await api.createOrder(token, {
+        order_number: newOrder.order_number.trim() || getGeneratedOrderNumber(),
+        marketplace: newOrder.marketplace,
+        items: [
+          {
+            product_id: newOrder.product_id,
+            quantity: newOrder.quantity,
+            unit_price: newOrder.unit_price,
+          },
+        ],
+      });
+      setMessage("Order created successfully.");
+      setMessageTone("success");
+      setIsAddingOrder(false);
+      refreshData(token);
+    } catch (err) {
+      setMessage("Failed to create order.");
+      setMessageTone("error");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function onSendAgentChat(e: FormEvent) {
+    e.preventDefault();
+    const prompt = chatPrompt.trim();
+    if (!prompt) return;
+
+    setIsChatting(true);
+    setChatHistory(prev => [
+      ...prev,
+      { role: "you", text: prompt, created_at: new Date().toISOString() },
+    ]);
+    setChatPrompt("");
+
+    try {
+      const response = await api.agentChat(token, prompt);
+      const text = `${response.action}: ${response.result}`;
+      setChatHistory(prev => [
+        ...prev,
+        { role: "agent", text, created_at: new Date().toISOString() },
+      ]);
+    } catch (err) {
+      const text = err instanceof Error ? err.message : "Chat request failed.";
+      setChatHistory(prev => [
+        ...prev,
+        { role: "agent", text: `Error: ${text}`, created_at: new Date().toISOString() },
+      ]);
+      setMessage("Agent chat failed. Create Foundry agent or check backend logs.");
+      setMessageTone("error");
+    } finally {
+      setIsChatting(false);
+    }
+  }
 
   useEffect(() => {
     if (!token) {
@@ -214,10 +345,17 @@ export default function App() {
         api.listProducts(activeToken),
         api.listOrders(activeToken)
       ]);
+      let agent: FoundryAgent | null = null;
+      try {
+        agent = await api.getFoundryAgent(activeToken);
+      } catch (e) {
+        agent = null;
+      }
       setUser(me);
       setOverview(ov);
       setProducts(pr);
       setOrders(ord);
+      setFoundryAgent(agent);
     } catch (err) {
       setToken("");
     }
@@ -239,13 +377,59 @@ export default function App() {
     }
   }
 
+  const lowStockProducts = useMemo(
+    () => products.filter(p => p.stock < LOW_STOCK_LIMIT),
+    [products]
+  );
+
+  const dashboardRevenueTrend = useMemo<DashboardRevenuePoint[]>(() => {
+    if (!overview) return [];
+    const cutoffDate = new Date();
+    cutoffDate.setHours(0, 0, 0, 0);
+    cutoffDate.setDate(cutoffDate.getDate() - dashboardDays + 1);
+
+    return overview.revenue_trend.filter(point => {
+      const currentDate = new Date(point.day);
+      return !Number.isNaN(currentDate.getTime()) && currentDate >= cutoffDate;
+    });
+  }, [overview, dashboardDays]);
+
+  const dashboardRevenueTotal = useMemo(
+    () => dashboardRevenueTrend.reduce((total, point) => total + point.revenue, 0),
+    [dashboardRevenueTrend]
+  );
+
+  const dashboardUnitsTotal = useMemo(
+    () => dashboardRevenueTrend.reduce((total, point) => total + point.units, 0),
+    [dashboardRevenueTrend]
+  );
+
   const filteredOrders = useMemo(() => {
-    if (!searchQuery) return orders;
-    return orders.filter(o => 
-      o.order_number.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      o.marketplace.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  }, [orders, searchQuery]);
+    const query = searchQuery.trim().toLowerCase();
+    return orders.filter(o => {
+      const matchesSearch =
+        !query ||
+        o.order_number.toLowerCase().includes(query) ||
+        o.marketplace.toLowerCase().includes(query);
+
+      const orderDate = new Date(o.created_at);
+      if (Number.isNaN(orderDate.getTime())) return false;
+
+      if (ordersFrom) {
+        const fromDate = new Date(ordersFrom);
+        fromDate.setHours(0, 0, 0, 0);
+        if (orderDate < fromDate) return false;
+      }
+
+      if (ordersTo) {
+        const toDate = new Date(ordersTo);
+        toDate.setHours(23, 59, 59, 999);
+        if (orderDate > toDate) return false;
+      }
+
+      return matchesSearch;
+    });
+  }, [orders, searchQuery, ordersFrom, ordersTo]);
 
   const filteredProducts = useMemo(() => {
     if (!searchQuery) return products;
@@ -254,6 +438,11 @@ export default function App() {
       p.sku.toLowerCase().includes(searchQuery.toLowerCase())
     );
   }, [products, searchQuery]);
+
+  const selectedOrderProduct = useMemo(
+    () => products.find(p => p.id === newOrder.product_id) || null,
+    [products, newOrder.product_id]
+  );
 
   if (!token || !user || !overview) {
     return (
@@ -328,32 +517,38 @@ export default function App() {
 
   return (
     <div className="app-container">
-      <aside className="sidebar">
-        <div className="brand">
-          <h1 style={{ background: 'none', WebkitTextFillColor: 'initial', color: '#fff', fontSize: '1.5rem' }}>SellerIntel</h1>
+      <header className="top-navbar">
+        <div className="top-navbar-left">
+          <h1 className="brand-title">SellerIntel</h1>
+          <nav className="top-nav-list">
+            {dashboardPages.map(p => (
+              <button
+                key={p.id}
+                type="button"
+                className={`nav-item ${page === p.id ? "active" : ""}`}
+                onClick={() => setPage(p.id)}
+              >
+                <span style={{ fontSize: "1.2rem" }}>{p.icon}</span>
+                <span style={{ fontWeight: 500 }}>{p.label}</span>
+              </button>
+            ))}
+          </nav>
         </div>
-        <nav className="nav-list">
-          {dashboardPages.map(p => (
-            <li key={p.id} className={`nav-item ${page === p.id ? 'active' : ''}`} onClick={() => setPage(p.id)}>
-              <span style={{ fontSize: '1.2rem' }}>{p.icon}</span>
-              <span style={{ fontWeight: '500' }}>{p.label}</span>
-            </li>
-          ))}
-        </nav>
-        <div style={{ marginTop: 'auto' }}>
-          <div className="card" style={{ padding: '1rem', background: 'rgba(255,255,255,0.03)' }}>
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>User Account</p>
-            <p style={{ fontWeight: '600', fontSize: '0.85rem', marginTop: '0.25rem' }}>{user.email}</p>
+        <div className="top-navbar-right">
+          <div className="account-chip">
+            <span className="account-label">User Account</span>
+            <span className="account-email">{user.email}</span>
           </div>
-          <button 
-            className="nav-item" 
-            style={{ background: 'none', border: 'none', width: '100%', marginTop: '1rem', color: 'var(--error)' }}
+          <button
+            type="button"
+            className="nav-item logout-btn"
             onClick={() => setToken("")}
           >
-            <span>🚪</span> <span>Logout</span>
+            <span>🚪</span>
+            <span>Logout</span>
           </button>
         </div>
-      </aside>
+      </header>
 
       <main className="main-content">
         <header className="app-header">
@@ -368,24 +563,56 @@ export default function App() {
             />
           </div>
           <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-            <div className="stat-change up" style={{ fontSize: '0.85rem', background: 'rgba(16, 185, 129, 0.1)', padding: '6px 12px', borderRadius: 'full' }}>
+            <div className="stat-change up" style={{ fontSize: '0.85rem', background: 'rgba(16, 185, 129, 0.1)', padding: '6px 12px', borderRadius: '999px' }}>
               ● {overview.active_listings} Active Listings
+            </div>
+            <div style={{ fontSize: '0.85rem', background: 'rgba(245, 158, 11, 0.12)', color: 'var(--warning)', padding: '6px 12px', borderRadius: '999px', fontWeight: 600 }}>
+              ⚠ {lowStockProducts.length} Low Stock
             </div>
           </div>
         </header>
 
+        {message && (
+          <div className={`notice-banner ${messageTone}`}>
+            <span>{message}</span>
+            <button
+              type="button"
+              className="notice-close-btn"
+              onClick={() => setMessage("")}
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {page === "overview" && (
           <>
+            <div className="filter-row">
+              <span className="filter-label">Dashboard Range</span>
+              <div className="filter-chip-group">
+                {[7, 14, 30, 90].map(days => (
+                  <button
+                    key={days}
+                    type="button"
+                    className={`filter-chip ${dashboardDays === days ? "active" : ""}`}
+                    onClick={() => setDashboardDays(days)}
+                  >
+                    {days} days
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="stats-grid">
               <div className="card stat-card">
                 <span className="stat-label">Total Revenue</span>
-                <span className="stat-value">{formatCurrency(overview.total_sales)}</span>
-                <div className="stat-change up" style={{ marginTop: '0.25rem' }}>↑ 12.5% vs last month</div>
+                <span className="stat-value">{formatCurrency(dashboardRevenueTotal)}</span>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Last {dashboardDays} days</div>
               </div>
               <div className="card stat-card">
                 <span className="stat-label">Units Sold</span>
-                <span className="stat-value">{formatInteger(overview.total_units_sold)}</span>
-                <div className="stat-change up" style={{ marginTop: '0.25rem' }}>↑ 8.2% vs last month</div>
+                <span className="stat-value">{formatInteger(dashboardUnitsTotal)}</span>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Last {dashboardDays} days</div>
               </div>
               <div className="card stat-card">
                 <span className="stat-label">Catalog Size</span>
@@ -399,12 +626,12 @@ export default function App() {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: '1.5rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1.5rem' }}>
               <div className="card">
-                <h3 style={{ marginBottom: '1.5rem', fontFamily: 'Outfit', fontSize: '1.25rem' }}>Revenue Flow (14d)</h3>
+                <h3 style={{ marginBottom: '1.5rem', fontFamily: 'Outfit', fontSize: '1.25rem' }}>Revenue Flow ({dashboardDays}d)</h3>
                 <div style={{ width: '100%', height: 300 }}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={[...overview.revenue_trend].reverse()}>
+                    <AreaChart data={[...dashboardRevenueTrend].reverse()}>
                       <defs>
                         <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.3}/>
@@ -458,7 +685,7 @@ export default function App() {
                         <span style={{ fontWeight: '700', fontSize: '0.8rem' }}>{m.listings}</span>
                       </div>
                       <div style={{ height: '4px', background: 'rgba(255,255,255,0.05)', borderRadius: '10px', overflow: 'hidden' }}>
-                        <div style={{ height: '100%', background: COLORS[idx % COLORS.length], width: `${(m.listings / overview.total_listings) * 100}%` }}></div>
+                        <div style={{ height: '100%', background: COLORS[idx % COLORS.length], width: `${overview.total_listings ? (m.listings / overview.total_listings) * 100 : 0}%` }}></div>
                       </div>
                     </div>
                   ))}
@@ -489,6 +716,29 @@ export default function App() {
                 </button>
               </div>
             </div>
+
+            {lowStockProducts.length > 0 && (
+              <div className="low-stock-alert">
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+                  <strong style={{ color: 'var(--warning)' }}>⚠ {lowStockProducts.length} items need restock</strong>
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Quick action adds +{QUICK_RESTOCK_UNITS} units</span>
+                </div>
+                <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.85rem', flexWrap: 'wrap' }}>
+                  {lowStockProducts.slice(0, 4).map(p => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className="chip-btn"
+                      onClick={() => onQuickRestock(p)}
+                      disabled={restockingProductId === p.id}
+                    >
+                      {restockingProductId === p.id ? "Restocking..." : `${p.sku} (${p.stock}) +${QUICK_RESTOCK_UNITS}`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <table>
               <thead>
                 <tr>
@@ -506,16 +756,19 @@ export default function App() {
                     <td>{p.marketplace}</td>
                     <td style={{ fontWeight: '700' }}>{formatCurrency(p.sell_price)}</td>
                     <td>
-                      <span style={{ 
-                        padding: '4px 10px', 
-                        borderRadius: 'full', 
-                        fontSize: '0.75rem', 
-                        background: p.stock < 10 ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)',
-                        color: p.stock < 10 ? 'var(--error)' : 'var(--success)',
-                        fontWeight: '600'
-                      }}>
-                        {p.stock} Units
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                        <span style={{ 
+                          padding: '4px 10px', 
+                          borderRadius: '999px', 
+                          fontSize: '0.75rem', 
+                          background: p.stock < LOW_STOCK_LIMIT ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)',
+                          color: p.stock < LOW_STOCK_LIMIT ? 'var(--error)' : 'var(--success)',
+                          fontWeight: '600'
+                        }}>
+                          {p.stock} Units
+                        </span>
+                        {p.stock < LOW_STOCK_LIMIT && <span className="low-badge">Low</span>}
+                      </div>
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -531,10 +784,26 @@ export default function App() {
                         >
                           🗑️
                         </button>
+                        {p.stock < LOW_STOCK_LIMIT && (
+                          <button
+                            onClick={() => onQuickRestock(p)}
+                            style={{ background: 'rgba(245, 158, 11, 0.16)', border: '1px solid rgba(245, 158, 11, 0.3)', color: 'var(--warning)', padding: '6px 8px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}
+                            disabled={restockingProductId === p.id}
+                          >
+                            {restockingProductId === p.id ? "..." : `+${QUICK_RESTOCK_UNITS}`}
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
                 ))}
+                {filteredProducts.length === 0 && (
+                  <tr>
+                    <td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1.25rem' }}>
+                      No products found.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -542,15 +811,51 @@ export default function App() {
 
         {page === "orders" && (
           <div className="card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
               <h3 style={{ fontFamily: 'Outfit', fontSize: '1.25rem' }}>Latest Transactions</h3>
-              <button 
-                className="auth-btn" 
-                style={{ width: 'auto', padding: '0.6rem 1.2rem', fontSize: '0.85rem', background: 'rgba(255,255,255,0.05)', color: '#fff' }}
-                onClick={() => downloadCSV(orders, "order_history.csv")}
-              >
-                📥 Download History
-              </button>
+              <div style={{ display: 'flex', gap: '0.65rem', flexWrap: 'wrap' }}>
+                <input
+                  type="date"
+                  className="date-input"
+                  value={ordersFrom}
+                  onChange={e => setOrdersFrom(e.target.value)}
+                  aria-label="Orders from date"
+                />
+                <input
+                  type="date"
+                  className="date-input"
+                  value={ordersTo}
+                  onChange={e => setOrdersTo(e.target.value)}
+                  aria-label="Orders to date"
+                />
+                <button
+                  type="button"
+                  className="chip-btn"
+                  onClick={() => {
+                    setOrdersFrom("");
+                    setOrdersTo("");
+                  }}
+                >
+                  Clear Dates
+                </button>
+                <button
+                  className="auth-btn"
+                  style={{ width: 'auto', padding: '0.55rem 1rem', fontSize: '0.85rem' }}
+                  onClick={onOpenCreateOrderModal}
+                >
+                  ➕ Create Order
+                </button>
+                <button 
+                  className="auth-btn" 
+                  style={{ width: 'auto', padding: '0.55rem 1rem', fontSize: '0.85rem', background: 'rgba(255,255,255,0.05)', color: '#fff' }}
+                  onClick={() => downloadCSV(filteredOrders, "order_history.csv")}
+                >
+                  📥 Download History
+                </button>
+              </div>
+            </div>
+            <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '0.8rem' }}>
+              Showing {filteredOrders.length} order(s)
             </div>
             <table>
               <thead>
@@ -565,119 +870,151 @@ export default function App() {
                     <td>{o.marketplace}</td>
                     <td>{formatShortDate(o.created_at)}</td>
                     <td style={{ fontWeight: '700' }}>{formatCurrency(o.total_amount)}</td>
-                    <td><span style={{ padding: '4px 10px', background: 'rgba(168, 85, 247, 0.1)', color: 'var(--secondary)', borderRadius: 'full', fontSize: '0.75rem', fontWeight: '600' }}>Completed</span></td>
+                    <td><span style={{ padding: '4px 10px', background: 'rgba(168, 85, 247, 0.1)', color: 'var(--secondary)', borderRadius: '999px', fontSize: '0.75rem', fontWeight: '600' }}>Completed</span></td>
                   </tr>
                 ))}
+                {filteredOrders.length === 0 && (
+                  <tr>
+                    <td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1.25rem' }}>
+                      No orders found for current filters.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
         )}
 
         {page === "ai" && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '1.5rem' }}>
-            <div className="card">
-              <h3 style={{ marginBottom: '1.5rem', fontFamily: 'Outfit', fontSize: '1.2rem' }}>Buybox Predictor</h3>
-              <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>Dynamic pricing signals powered by historical training data.</p>
-              
-              <form onSubmit={onPredictBuybox} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem 1.25rem' }}>
-                  <div className="input-group">
-                    <span className="input-label">SKU Identifier</span>
-                    <input className="auth-input" placeholder="e.g. EB-008-2" value={buyboxInput.sku} onChange={e => setBuyboxInput({...buyboxInput, sku: e.target.value})} required />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              <div className="card">
+                <h3 style={{ marginBottom: '1.5rem', fontFamily: 'Outfit', fontSize: '1.2rem' }}>Buybox Predictor</h3>
+                <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>Dynamic pricing signals powered by historical training data.</p>
+                
+                <form onSubmit={onPredictBuybox} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem 1.25rem' }}>
+                    <div className="input-group">
+                      <span className="input-label">SKU Identifier</span>
+                      <input className="auth-input" placeholder="e.g. EB-008-2" value={buyboxInput.sku} onChange={e => setBuyboxInput({...buyboxInput, sku: e.target.value})} required />
+                    </div>
+                    <div className="input-group">
+                      <span className="input-label">Proposed Sell Price</span>
+                      <input className="auth-input" placeholder="e.g. 49.99" type="number" step="0.01" value={buyboxInput.SellPrice} onChange={e => setBuyboxInput({...buyboxInput, SellPrice: Number(e.target.value)})} required />
+                    </div>
+                    <div className="input-group">
+                      <span className="input-label">Min Competitor Price</span>
+                      <input className="auth-input" placeholder="e.g. 45.00" type="number" step="0.01" value={buyboxInput.MinCompetitorPrice} onChange={e => setBuyboxInput({...buyboxInput, MinCompetitorPrice: Number(e.target.value)})} required />
+                    </div>
+                    <div className="input-group">
+                      <span className="input-label">Fulfillment Model</span>
+                      <select 
+                        className="auth-input" 
+                        style={{ background: 'rgba(255,255,255,0.03)', color: '#fff', border: '1px solid var(--glass-border)' }}
+                        value={buyboxInput.IsFBA} 
+                        onChange={e => setBuyboxInput({...buyboxInput, IsFBA: Number(e.target.value)})}
+                      >
+                        <option value="1" style={{ background: '#111' }}>FBA (Fulfilled by Amazon)</option>
+                        <option value="0" style={{ background: '#111' }}>FBM (Merchant Fulfilled)</option>
+                      </select>
+                    </div>
                   </div>
-                  <div className="input-group">
-                    <span className="input-label">Proposed Sell Price</span>
-                    <input className="auth-input" placeholder="e.g. 49.99" type="number" step="0.01" value={buyboxInput.SellPrice} onChange={e => setBuyboxInput({...buyboxInput, SellPrice: Number(e.target.value)})} required />
-                  </div>
-                  <div className="input-group">
-                    <span className="input-label">Min Competitor Price</span>
-                    <input className="auth-input" placeholder="e.g. 45.00" type="number" step="0.01" value={buyboxInput.MinCompetitorPrice} onChange={e => setBuyboxInput({...buyboxInput, MinCompetitorPrice: Number(e.target.value)})} required />
-                  </div>
-                  <div className="input-group">
-                    <span className="input-label">Fulfillment Model</span>
-                    <select 
-                      className="auth-input" 
-                      style={{ background: 'rgba(255,255,255,0.03)', color: '#fff', border: '1px solid var(--glass-border)' }}
-                      value={buyboxInput.IsFBA} 
-                      onChange={e => setBuyboxInput({...buyboxInput, IsFBA: Number(e.target.value)})}
-                    >
-                      <option value="1" style={{ background: '#111' }}>FBA (Fulfilled by Amazon)</option>
-                      <option value="0" style={{ background: '#111' }}>FBM (Merchant Fulfilled)</option>
-                    </select>
-                  </div>
-                </div>
-                <button type="submit" className="auth-btn" style={{ marginTop: '0.5rem' }}>Generate Intelligence Signal</button>
-              </form>
+                  <button type="submit" className="auth-btn" style={{ marginTop: '0.5rem' }}>Generate Intelligence Signal</button>
+                </form>
 
-              {prediction && (
-                <div style={{ 
-                  marginTop: '1.5rem', 
-                  padding: '1.5rem', 
-                  background: 'rgba(34, 211, 238, 0.05)', 
-                  borderRadius: '16px', 
-                  border: '1px solid rgba(34, 211, 238, 0.2)',
-                  boxShadow: '0 0 20px rgba(34, 211, 238, 0.1)'
-                }}>
-                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                     <span style={{ fontSize: '0.75rem', color: 'var(--accent)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>AI Recommendation</span>
-                     <span style={{ 
-                       padding: '4px 8px', 
-                       background: prediction.confidence > 0.7 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)', 
-                       color: prediction.confidence > 0.7 ? 'var(--success)' : 'var(--warning)',
-                       borderRadius: '6px',
-                       fontSize: '0.7rem',
-                       fontWeight: '700'
-                     }}>
-                       {(prediction.confidence * 100).toFixed(0)}% Confidence
-                     </span>
-                   </div>
-                   <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>
-                     <div style={{ fontSize: '2rem', fontWeight: '800', color: '#fff' }}>{formatCurrency(prediction.recommended_price)}</div>
-                     <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Target Price</div>
-                   </div>
-                   <div style={{ marginTop: '1rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                     Signal Source: <code style={{ color: 'var(--accent)' }}>{prediction.model_name}</code>
-                   </div>
-                </div>
-              )}
-            </div>
-
-            <div className="card" style={{ border: '1px solid var(--primary)', boxShadow: '0 0 20px rgba(99, 102, 241, 0.1)' }}>
-              <h3 style={{ marginBottom: '1.5rem', fontFamily: 'Outfit', fontSize: '1.25rem' }}>🤖 Neural Agent Pulse</h3>
-              <div style={{ 
-                background: 'rgba(0,0,0,0.3)', 
-                padding: '1rem', 
-                borderRadius: '12px', 
-                fontFamily: 'monospace', 
-                fontSize: '0.8rem', 
-                height: '400px', 
-                overflow: 'hidden',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '0.6rem'
-              }}>
-                {thinkingLog.map((log, idx) => (
-                  <div key={idx} style={{ 
-                    color: idx === 0 ? 'var(--primary)' : 'var(--text-muted)',
-                    opacity: 1 - (idx * 0.12),
-                    transition: 'all 0.5s ease',
-                    display: 'flex',
-                    gap: '0.75rem'
+                {prediction && (
+                  <div style={{ 
+                    marginTop: '1.5rem', 
+                    padding: '1.5rem', 
+                    background: 'rgba(34, 211, 238, 0.05)', 
+                    borderRadius: '16px', 
+                    border: '1px solid rgba(34, 211, 238, 0.2)',
+                    boxShadow: '0 0 20px rgba(34, 211, 238, 0.1)'
                   }}>
-                    <span style={{ color: 'var(--success)', fontWeight: '700' }}>[OK]</span>
-                    <span>{log}</span>
+                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                       <span style={{ fontSize: '0.75rem', color: 'var(--accent)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>AI Recommendation</span>
+                       <span style={{ 
+                         padding: '4px 8px', 
+                         background: prediction.confidence > 0.7 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)', 
+                         color: prediction.confidence > 0.7 ? 'var(--success)' : 'var(--warning)',
+                         borderRadius: '6px',
+                         fontSize: '0.7rem',
+                         fontWeight: '700'
+                       }}>
+                         {(prediction.confidence * 100).toFixed(0)}% Confidence
+                       </span>
+                     </div>
+                     <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>
+                       <div style={{ fontSize: '2rem', fontWeight: '800', color: '#fff' }}>{formatCurrency(prediction.recommended_price)}</div>
+                       <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Target Price</div>
+                     </div>
+                     <div style={{ marginTop: '1rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                       Signal Source: <code style={{ color: 'var(--accent)' }}>{prediction.model_name}</code>
+                     </div>
                   </div>
-                ))}
-                {thinkingLog.length === 0 && <div style={{ color: 'var(--text-muted)' }}>Waiting for telemetry...</div>}
+                )}
               </div>
-              <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'rgba(255,255,255,0.02)', borderRadius: '10px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Agent System Load</span>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--success)' }}>Nominal</span>
+
+              <div className="card">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                  <h3 style={{ fontFamily: 'Outfit', fontSize: '1.1rem' }}>Agent Chat</h3>
+                  <button
+                    type="button"
+                    className="chip-btn"
+                    onClick={() => setChatHistory([])}
+                    disabled={chatHistory.length === 0}
+                  >
+                    Clear
+                  </button>
                 </div>
-                <div style={{ height: '4px', background: 'rgba(16, 185, 129, 0.1)', borderRadius: '10px', width: '100%' }}>
-                  <div style={{ height: '100%', background: 'var(--success)', width: '24%', borderRadius: '10px' }}></div>
+                {!foundryAgent && (
+                  <div style={{ marginBottom: '0.8rem', fontSize: '0.78rem', color: 'var(--warning)' }}>
+                    Create your Foundry agent first to enable chat.
+                    <div style={{ marginTop: '0.65rem' }}>
+                      <button
+                        type="button"
+                        className="auth-btn"
+                        style={{ width: 'auto', marginTop: 0, padding: '0.5rem 0.9rem', fontSize: '0.78rem' }}
+                        onClick={onCreateFoundryAgent}
+                        disabled={isCreatingAgent}
+                      >
+                        {isCreatingAgent ? "Creating..." : "Create Foundry Agent"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <div className="chat-box">
+                  {chatHistory.length === 0 && (
+                    <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                      Ask the agent for insights like "Which SKU should I restock first?"
+                    </div>
+                  )}
+                  {chatHistory.map((msg, index) => (
+                    <div key={`${msg.created_at}-${index}`} className={`chat-item ${msg.role}`}>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                        {msg.role === "you" ? "You" : "Agent"} • {formatShortTime(msg.created_at)}
+                      </div>
+                      <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.45 }}>{msg.text}</div>
+                    </div>
+                  ))}
                 </div>
+                <form onSubmit={onSendAgentChat} style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <textarea
+                    className="auth-input"
+                    style={{ minHeight: '90px', resize: 'vertical', alignItems: 'flex-start', paddingTop: '0.75rem' }}
+                    placeholder="Type your question for the agent..."
+                    value={chatPrompt}
+                    onChange={e => setChatPrompt(e.target.value)}
+                  />
+                  <button
+                    type="submit"
+                    className="auth-btn"
+                    style={{ width: 'auto', padding: '0.6rem 1.2rem', fontSize: '0.85rem' }}
+                    disabled={isChatting || !chatPrompt.trim() || !foundryAgent}
+                  >
+                    {isChatting ? "Sending..." : "Send to Agent"}
+                  </button>
+                </form>
               </div>
             </div>
           </div>
@@ -736,6 +1073,114 @@ export default function App() {
                   className="auth-btn" 
                   style={{ flex: 1, background: 'rgba(255,255,255,0.05)', color: '#fff' }} 
                   onClick={() => setEditingProduct(null)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {isAddingOrder && (
+        <div className="auth-shell" style={{ position: 'fixed', zIndex: 1000, background: 'rgba(0,0,0,0.8)' }}>
+          <div className="auth-card" style={{ width: '100%', maxWidth: '520px' }}>
+            <h1>Create Order</h1>
+            <p>Create a quick order using one product line item.</p>
+            
+            <form onSubmit={onCreateOrder} className="auth-form" style={{ marginTop: '2rem' }}>
+              <div className="input-group">
+                <span className="input-label">Order Number</span>
+                <input
+                  className="auth-input"
+                  value={newOrder.order_number}
+                  onChange={e => setNewOrder({ ...newOrder, order_number: e.target.value })}
+                  placeholder="ORD-00012345"
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div className="input-group">
+                  <span className="input-label">Marketplace</span>
+                  <select
+                    className="auth-input"
+                    style={{ background: 'rgba(255,255,255,0.05)', color: '#fff', border: '1px solid var(--glass-border)' }}
+                    value={newOrder.marketplace}
+                    onChange={e => setNewOrder({ ...newOrder, marketplace: e.target.value })}
+                  >
+                    {["Amazon", "eBay", "Walmart", "Target", "Etsy", "Shopify"].map(m => (
+                      <option key={m} value={m} style={{ background: '#111' }}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="input-group">
+                  <span className="input-label">Product</span>
+                  <select
+                    className="auth-input"
+                    style={{ background: 'rgba(255,255,255,0.05)', color: '#fff', border: '1px solid var(--glass-border)' }}
+                    value={newOrder.product_id}
+                    onChange={e => {
+                      const productId = Number(e.target.value);
+                      const selected = products.find(p => p.id === productId);
+                      setNewOrder({
+                        ...newOrder,
+                        product_id: productId,
+                        unit_price: selected ? selected.sell_price : newOrder.unit_price,
+                        marketplace: selected ? selected.marketplace : newOrder.marketplace,
+                      });
+                    }}
+                  >
+                    {products.map(p => (
+                      <option key={p.id} value={p.id} style={{ background: '#111' }}>
+                        {p.sku} • {p.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }}>
+                <div className="input-group">
+                  <span className="input-label">Quantity</span>
+                  <input
+                    className="auth-input"
+                    type="number"
+                    min={1}
+                    value={newOrder.quantity}
+                    onChange={e => setNewOrder({ ...newOrder, quantity: Number(e.target.value) })}
+                    required
+                  />
+                </div>
+                <div className="input-group">
+                  <span className="input-label">Unit Price ($)</span>
+                  <input
+                    className="auth-input"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={newOrder.unit_price}
+                    onChange={e => setNewOrder({ ...newOrder, unit_price: Number(e.target.value) })}
+                    required
+                  />
+                </div>
+              </div>
+
+              {selectedOrderProduct && (
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
+                  Selected stock: <strong>{selectedOrderProduct.stock}</strong> units
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
+                <button type="submit" className="auth-btn" style={{ flex: 1 }} disabled={loading}>
+                  {loading ? "Creating..." : "Create Order"}
+                </button>
+                <button 
+                  type="button" 
+                  className="auth-btn" 
+                  style={{ flex: 1, background: 'rgba(255,255,255,0.05)', color: '#fff' }} 
+                  onClick={() => setIsAddingOrder(false)}
                 >
                   Cancel
                 </button>
