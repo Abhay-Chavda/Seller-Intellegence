@@ -138,7 +138,7 @@ class AgentChatResponse(BaseModel):
 
 
 class FoundryAgentCreateRequest(BaseModel):
-    connection_id: str = Field(min_length=1)
+    connection_id: str | None = None
     openapi_spec: dict[str, Any] | None = None
     openapi_spec_url: str | None = None
     agent_name: str | None = None

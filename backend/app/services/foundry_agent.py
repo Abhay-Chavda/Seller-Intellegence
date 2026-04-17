@@ -113,7 +113,7 @@ def create_user_foundry_agent(
     model_name = settings.foundry_model_deployment_name.strip()
     spec_url = (payload.openapi_spec_url or settings.foundry_tools_openapi_url).strip()
     provided_spec = payload.openapi_spec
-    connection_id = payload.connection_id.strip()
+    connection_id = (payload.connection_id or settings.foundry_connection_id).strip()
     agent_name = (
         payload.agent_name.strip()
         if payload.agent_name and payload.agent_name.strip()
@@ -127,7 +127,7 @@ def create_user_foundry_agent(
     if provided_spec is None and not spec_url:
         raise ValueError("OpenAPI spec URL is required")
     if not connection_id:
-        raise ValueError("connection_id is required")
+        raise ValueError("FOUNDRY_CONNECTION_ID is not configured")
 
     raw_spec = provided_spec if provided_spec is not None else _download_openapi_spec(spec_url)
     prepared_spec = _prepare_openapi_for_foundry(raw_spec)

@@ -131,11 +131,16 @@ Auth for tool calls:
 Create one Foundry agent per user:
 
 - Call `POST /foundry/agent/create` with body:
-  - `connection_id` (required): Foundry project connection ID for that user's Bearer token
+  - `connection_id` (optional): defaults to server env `FOUNDRY_CONNECTION_ID`
   - `openapi_spec` (optional): inline OpenAPI JSON object
-  - `openapi_spec_url` (optional): defaults to `FOUNDRY_TOOLS_OPENAPI_URL` if configured
+  - `openapi_spec_url` (optional): defaults to server env `FOUNDRY_TOOLS_OPENAPI_URL`
   - `agent_name` (optional): defaults to `seller-intelligence-agent-<user_id>`
 - Call `GET /foundry/agent` to fetch the saved agent mapping for the logged-in user.
+
+Agent chat routing:
+
+- `POST /agent/chat` now routes through the user's saved Foundry agent.
+- If agent does not exist for the user, API returns 400 and asks to create it first.
 
 ## Tool metadata files
 

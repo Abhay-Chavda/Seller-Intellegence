@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     buybox_api_timeout_seconds: float = 8.0
     foundry_project_endpoint: str = ""
     foundry_model_deployment_name: str = ""
+    foundry_connection_id: str = ""
     foundry_tools_openapi_url: str = ""
     foundry_agent_name_prefix: str = "seller-intelligence-agent"
 
