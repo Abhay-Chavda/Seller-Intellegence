@@ -2,30 +2,21 @@ import { FormEvent, useEffect, useState, useMemo } from "react";
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell, Legend } from 'recharts';
 import {
   api,
-  BuyboxInput,
-  BuyboxPrediction,
   DashboardOverview,
   DashboardRevenuePoint,
-  FoundryAgent,
   Order,
   Product,
   User,
 } from "./api";
 
 type AuthMode = "login" | "signup";
-type DashboardPage = "overview" | "inventory" | "orders" | "ai";
+type DashboardPage = "overview" | "inventory" | "orders";
 type NoticeTone = "error" | "success";
-type AgentChatMessage = {
-  role: "you" | "agent";
-  text: string;
-  created_at: string;
-};
 
 const dashboardPages: Array<{ id: DashboardPage; label: string; icon: string }> = [
   { id: "overview", label: "Dashboard", icon: "📊" },
   { id: "inventory", label: "Inventory", icon: "📦" },
   { id: "orders", label: "Orders", icon: "🛍️" },
-  { id: "ai", label: "AI Insights", icon: "🤖" },
 ];
 
 function formatCurrency(value: number): string {
@@ -40,15 +31,6 @@ function formatShortDate(value: string): string {
   if (!value) return "N/A";
   try {
     return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date(value));
-  } catch (e) {
-    return "N/A";
-  }
-}
-
-function formatShortTime(value: string): string {
-  if (!value) return "N/A";
-  try {
-    return new Intl.DateTimeFormat("en-US", { hour: "2-digit", minute: "2-digit" }).format(new Date(value));
   } catch (e) {
     return "N/A";
   }
@@ -98,9 +80,6 @@ export default function App() {
   const [dashboardDays, setDashboardDays] = useState(14);
   const [ordersFrom, setOrdersFrom] = useState("");
   const [ordersTo, setOrdersTo] = useState("");
-  const [chatPrompt, setChatPrompt] = useState("");
-  const [chatHistory, setChatHistory] = useState<AgentChatMessage[]>([]);
-  const [isChatting, setIsChatting] = useState(false);
   const [newProduct, setNewProduct] = useState<Omit<Product, "id" | "seller_id">>({
     title: "",
     sku: "",
@@ -115,43 +94,6 @@ export default function App() {
     quantity: 1,
     unit_price: 0,
   });
-  const [prediction, setPrediction] = useState<BuyboxPrediction | null>(null);
-  const [foundryAgent, setFoundryAgent] = useState<FoundryAgent | null>(null);
-  const [isCreatingAgent, setIsCreatingAgent] = useState(false);
-  const [buyboxInput, setBuyboxInput] = useState<BuyboxInput>({
-    sku: "",
-    SellPrice: 0,
-    ShippingPrice: 0,
-    TotalPrice: 0,
-    MinCompetitorPrice: 0,
-    MinTotalPriceInSnapshot: 0,
-    PriceGap: 0,
-    TotalPriceGap: 0,
-    PriceGapPercent: 0,
-    PriceRank: 0,
-    PriceRankNormalized: 0,
-    TotalCompetitorsInSnapshot: 1,
-    PositiveFeedbackPercent: 95,
-    MaxFeedbackInSnapshot: 99,
-    FeedbackGapFromMax: 4,
-    IsMinSellPrice: 0,
-    IsMinTotalPrice: 0,
-    IsFBA: 1,
-  });
-
-  async function onPredictBuybox(e: FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      const result = await api.predictBuybox(token, buyboxInput);
-      setPrediction(result);
-    } catch (err) {
-      setMessage("Prediction failed. Try again.");
-      setMessageTone("error");
-    } finally {
-      setLoading(false);
-    }
-  }
 
   async function onCreateProduct(e: FormEvent) {
     e.preventDefault();
@@ -208,23 +150,6 @@ export default function App() {
       setMessageTone("error");
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function onCreateFoundryAgent() {
-    if (!confirm("Create Foundry agent now?")) return;
-
-    setIsCreatingAgent(true);
-    try {
-      const response = await api.createFoundryAgent(token);
-      setFoundryAgent(response.agent);
-      setMessage(response.created ? "Foundry agent created successfully." : "Foundry agent already exists.");
-      setMessageTone("success");
-    } catch (err) {
-      setMessage("Failed to create Foundry agent. Check backend env + connection ID.");
-      setMessageTone("error");
-    } finally {
-      setIsCreatingAgent(false);
     }
   }
 
@@ -296,38 +221,6 @@ export default function App() {
     }
   }
 
-  async function onSendAgentChat(e: FormEvent) {
-    e.preventDefault();
-    const prompt = chatPrompt.trim();
-    if (!prompt) return;
-
-    setIsChatting(true);
-    setChatHistory(prev => [
-      ...prev,
-      { role: "you", text: prompt, created_at: new Date().toISOString() },
-    ]);
-    setChatPrompt("");
-
-    try {
-      const response = await api.agentChat(token, prompt);
-      const text = `${response.action}: ${response.result}`;
-      setChatHistory(prev => [
-        ...prev,
-        { role: "agent", text, created_at: new Date().toISOString() },
-      ]);
-    } catch (err) {
-      const text = err instanceof Error ? err.message : "Chat request failed.";
-      setChatHistory(prev => [
-        ...prev,
-        { role: "agent", text: `Error: ${text}`, created_at: new Date().toISOString() },
-      ]);
-      setMessage("Agent chat failed. Create Foundry agent or check backend logs.");
-      setMessageTone("error");
-    } finally {
-      setIsChatting(false);
-    }
-  }
-
   useEffect(() => {
     if (!token) {
       localStorage.removeItem("token");
@@ -345,17 +238,10 @@ export default function App() {
         api.listProducts(activeToken),
         api.listOrders(activeToken)
       ]);
-      let agent: FoundryAgent | null = null;
-      try {
-        agent = await api.getFoundryAgent(activeToken);
-      } catch (e) {
-        agent = null;
-      }
       setUser(me);
       setOverview(ov);
       setProducts(pr);
       setOrders(ord);
-      setFoundryAgent(agent);
     } catch (err) {
       setToken("");
     }
@@ -885,140 +771,6 @@ export default function App() {
           </div>
         )}
 
-        {page === "ai" && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-              <div className="card">
-                <h3 style={{ marginBottom: '1.5rem', fontFamily: 'Outfit', fontSize: '1.2rem' }}>Buybox Predictor</h3>
-                <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>Dynamic pricing signals powered by historical training data.</p>
-                
-                <form onSubmit={onPredictBuybox} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem 1.25rem' }}>
-                    <div className="input-group">
-                      <span className="input-label">SKU Identifier</span>
-                      <input className="auth-input" placeholder="e.g. EB-008-2" value={buyboxInput.sku} onChange={e => setBuyboxInput({...buyboxInput, sku: e.target.value})} required />
-                    </div>
-                    <div className="input-group">
-                      <span className="input-label">Proposed Sell Price</span>
-                      <input className="auth-input" placeholder="e.g. 49.99" type="number" step="0.01" value={buyboxInput.SellPrice} onChange={e => setBuyboxInput({...buyboxInput, SellPrice: Number(e.target.value)})} required />
-                    </div>
-                    <div className="input-group">
-                      <span className="input-label">Min Competitor Price</span>
-                      <input className="auth-input" placeholder="e.g. 45.00" type="number" step="0.01" value={buyboxInput.MinCompetitorPrice} onChange={e => setBuyboxInput({...buyboxInput, MinCompetitorPrice: Number(e.target.value)})} required />
-                    </div>
-                    <div className="input-group">
-                      <span className="input-label">Fulfillment Model</span>
-                      <select 
-                        className="auth-input" 
-                        style={{ background: 'rgba(255,255,255,0.03)', color: '#fff', border: '1px solid var(--glass-border)' }}
-                        value={buyboxInput.IsFBA} 
-                        onChange={e => setBuyboxInput({...buyboxInput, IsFBA: Number(e.target.value)})}
-                      >
-                        <option value="1" style={{ background: '#111' }}>FBA (Fulfilled by Amazon)</option>
-                        <option value="0" style={{ background: '#111' }}>FBM (Merchant Fulfilled)</option>
-                      </select>
-                    </div>
-                  </div>
-                  <button type="submit" className="auth-btn" style={{ marginTop: '0.5rem' }}>Generate Intelligence Signal</button>
-                </form>
-
-                {prediction && (
-                  <div style={{ 
-                    marginTop: '1.5rem', 
-                    padding: '1.5rem', 
-                    background: 'rgba(34, 211, 238, 0.05)', 
-                    borderRadius: '16px', 
-                    border: '1px solid rgba(34, 211, 238, 0.2)',
-                    boxShadow: '0 0 20px rgba(34, 211, 238, 0.1)'
-                  }}>
-                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                       <span style={{ fontSize: '0.75rem', color: 'var(--accent)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>AI Recommendation</span>
-                       <span style={{ 
-                         padding: '4px 8px', 
-                         background: prediction.confidence > 0.7 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)', 
-                         color: prediction.confidence > 0.7 ? 'var(--success)' : 'var(--warning)',
-                         borderRadius: '6px',
-                         fontSize: '0.7rem',
-                         fontWeight: '700'
-                       }}>
-                         {(prediction.confidence * 100).toFixed(0)}% Confidence
-                       </span>
-                     </div>
-                     <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>
-                       <div style={{ fontSize: '2rem', fontWeight: '800', color: '#fff' }}>{formatCurrency(prediction.recommended_price)}</div>
-                       <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Target Price</div>
-                     </div>
-                     <div style={{ marginTop: '1rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                       Signal Source: <code style={{ color: 'var(--accent)' }}>{prediction.model_name}</code>
-                     </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="card">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                  <h3 style={{ fontFamily: 'Outfit', fontSize: '1.1rem' }}>Agent Chat</h3>
-                  <button
-                    type="button"
-                    className="chip-btn"
-                    onClick={() => setChatHistory([])}
-                    disabled={chatHistory.length === 0}
-                  >
-                    Clear
-                  </button>
-                </div>
-                {!foundryAgent && (
-                  <div style={{ marginBottom: '0.8rem', fontSize: '0.78rem', color: 'var(--warning)' }}>
-                    Create your Foundry agent first to enable chat.
-                    <div style={{ marginTop: '0.65rem' }}>
-                      <button
-                        type="button"
-                        className="auth-btn"
-                        style={{ width: 'auto', marginTop: 0, padding: '0.5rem 0.9rem', fontSize: '0.78rem' }}
-                        onClick={onCreateFoundryAgent}
-                        disabled={isCreatingAgent}
-                      >
-                        {isCreatingAgent ? "Creating..." : "Create Foundry Agent"}
-                      </button>
-                    </div>
-                  </div>
-                )}
-                <div className="chat-box">
-                  {chatHistory.length === 0 && (
-                    <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                      Ask the agent for insights like "Which SKU should I restock first?"
-                    </div>
-                  )}
-                  {chatHistory.map((msg, index) => (
-                    <div key={`${msg.created_at}-${index}`} className={`chat-item ${msg.role}`}>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                        {msg.role === "you" ? "You" : "Agent"} • {formatShortTime(msg.created_at)}
-                      </div>
-                      <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.45 }}>{msg.text}</div>
-                    </div>
-                  ))}
-                </div>
-                <form onSubmit={onSendAgentChat} style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                  <textarea
-                    className="auth-input"
-                    style={{ minHeight: '90px', resize: 'vertical', alignItems: 'flex-start', paddingTop: '0.75rem' }}
-                    placeholder="Type your question for the agent..."
-                    value={chatPrompt}
-                    onChange={e => setChatPrompt(e.target.value)}
-                  />
-                  <button
-                    type="submit"
-                    className="auth-btn"
-                    style={{ width: 'auto', padding: '0.6rem 1.2rem', fontSize: '0.85rem' }}
-                    disabled={isChatting || !chatPrompt.trim() || !foundryAgent}
-                  >
-                    {isChatting ? "Sending..." : "Send to Agent"}
-                  </button>
-                </form>
-              </div>
-            </div>
-          </div>
-        )}
       </main>
 
       {editingProduct && (

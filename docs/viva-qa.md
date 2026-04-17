@@ -1,41 +1,41 @@
-# Viva Preparation (Likely Questions + Answers)
+# Viva Preparation
 
 ## 1) What is the main objective of your project?
 
-My objective is to build a seller intelligence platform where sellers can manage product data, track sales, and get buybox price recommendations from a trained model. I also added an agent interface for task-based interaction.
+The project is a seller management platform where users can manage products, track orders, and view dashboard metrics from one place.
 
 ## 2) Why did you choose React and FastAPI?
 
-React helps me build reusable and responsive UI quickly. FastAPI gives fast REST API development with automatic request validation and clean code structure in Python.
+React helps build the frontend quickly with reusable UI parts. FastAPI gives clean API routing, validation, and fast development in Python.
 
-## 3) How do you ensure data privacy between sellers?
+## 3) How do you protect seller data?
 
-I use JWT authentication and seller-scoped queries. Every key table is linked with `seller_id`, and backend endpoints fetch/update only records for the authenticated seller.
+I use JWT authentication and seller-scoped database queries. Every important record is connected to the logged-in seller.
 
 ## 4) How is total sales calculated?
 
-When orders are created, `total_amount` is computed from `quantity * unit_price` for each order item. Dashboard metrics aggregate all orders of that seller to calculate total sales and total units sold.
+When an order is created, `total_amount` is calculated from `quantity * unit_price` for all order items. Dashboard sales metrics are aggregated from those order totals.
 
-## 5) What model inputs are used for buybox prediction?
+## 5) How do you handle stock tracking?
 
-I use features including price fields, competitor price gap fields, rank fields, competition count, feedback-related fields, and fulfillment flag (`IsFBA`), based on my trained dataset.
+Each product stores a stock value. The dashboard counts low-stock items, and the inventory page also supports quick restocking.
 
-## 6) What happens if model file is missing?
+## 6) What security check did you implement in order creation?
 
-I implemented a fallback heuristic predictor, so API remains functional for demo/testing. This avoids app failure during deployment or local run.
+Before creating an order item, the backend checks that the selected product belongs to the logged-in seller.
 
-## 7) How does your agent work currently?
+## 7) Why did you use SQLAlchemy?
 
-Currently it is an action router endpoint (`/agent/chat`) that maps prompts to safe actions like sales summary and buybox prediction. It logs each task in `agent_tasks` for traceability.
+It gives readable model-based database code and works well with FastAPI for CRUD operations.
 
-## 8) What is one security check you implemented yourself?
+## 8) Why is product deletion a soft delete?
 
-In order creation, backend verifies the selected product belongs to the logged-in seller before creating the order item. This prevents cross-seller data misuse.
+Soft delete keeps old order references valid and avoids breaking historical sales data.
 
-## 9) Why Neon DB?
+## 9) Why did you use PostgreSQL?
 
-Neon gives managed PostgreSQL, easy connection from FastAPI, and is suitable for cloud-based student projects without complex infra setup.
+PostgreSQL is reliable, structured, and a good fit for relational data like users, products, orders, and order items.
 
-## 10) What are your next improvements?
+## 10) What improvements can you add later?
 
-I plan to integrate Azure Foundry real tool-calling in the agent, add richer analytics charts, and provide prediction history filtering/export.
+I can add better reporting, richer filtering, and more detailed sales analytics.

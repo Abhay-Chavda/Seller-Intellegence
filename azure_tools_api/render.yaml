@@ -3,8 +3,8 @@ services:
     name: seller-intelligence-tools-api
     env: python
     plan: free
-    buildCommand: pip install -r backend/requirements.txt
-    startCommand: uvicorn app.tools_api.app:app --host 0.0.0.0 --port $PORT --app-dir backend
+    buildCommand: pip install -r azure_tools_api/requirements.txt
+    startCommand: uvicorn azure_tools_api.main:app --host 0.0.0.0 --port $PORT --app-dir .
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
@@ -19,9 +19,3 @@ services:
         value: "120"
       - key: CORS_ORIGINS
         value: http://localhost:5173,http://127.0.0.1:5173
-      - key: BUYBOX_MODEL_PATH
-        value: backend/model/best_model.pkl
-      - key: BUYBOX_API_URL
-        sync: false
-      - key: BUYBOX_API_TIMEOUT_SECONDS
-        value: "8"

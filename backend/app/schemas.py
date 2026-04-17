@@ -1,7 +1,6 @@
 from datetime import datetime
-from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 
 class Token(BaseModel):
@@ -101,69 +100,6 @@ class OrderOut(BaseModel):
         from_attributes = True
 
 
-class BuyboxFeatureInput(BaseModel):
-    sku: str = "UNKNOWN"
-    SellPrice: float
-    ShippingPrice: float
-    TotalPrice: float
-    MinCompetitorPrice: float
-    MinTotalPriceInSnapshot: float
-    PriceGap: float
-    TotalPriceGap: float
-    PriceGapPercent: float
-    PriceRank: float
-    PriceRankNormalized: float
-    TotalCompetitorsInSnapshot: float
-    PositiveFeedbackPercent: float
-    MaxFeedbackInSnapshot: float
-    FeedbackGapFromMax: float
-    IsMinSellPrice: float
-    IsMinTotalPrice: float
-    IsFBA: float
-
-
-class BuyboxPredictionOut(BaseModel):
-    recommended_price: float
-    confidence: float
-    model_name: str
-
-
-class AgentChatRequest(BaseModel):
-    prompt: str
-
-
-class AgentChatResponse(BaseModel):
-    action: str
-    result: str
-
-
-class FoundryAgentCreateRequest(BaseModel):
-    connection_id: str | None = None
-    openapi_spec: dict[str, Any] | None = None
-    openapi_spec_url: str | None = None
-    agent_name: str | None = None
-
-
-class FoundryAgentOut(BaseModel):
-    id: int
-    seller_id: int
-    agent_name: str
-    agent_version: str
-    model: str
-    connection_id: str
-    openapi_spec_url: str
-    created_at: datetime
-    updated_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-class FoundryAgentCreateResponse(BaseModel):
-    created: bool
-    agent: FoundryAgentOut
-
-
 class DashboardCategoryCount(BaseModel):
     label: str
     value: int
@@ -201,13 +137,6 @@ class DashboardRecentSale(BaseModel):
     revenue: float
 
 
-class DashboardAgentRun(BaseModel):
-    name: str
-    task_type: str
-    status: str
-    created_at: str
-
-
 class DashboardOverview(BaseModel):
     source: str
     seller_display_name: str
@@ -219,141 +148,9 @@ class DashboardOverview(BaseModel):
     total_units_sold: int
     average_listing_price: float
     prime_listings: int
-    total_agents: int
     marketplace_mix: list[DashboardMarketplaceMix]
     revenue_trend: list[DashboardRevenuePoint]
     top_listings: list[DashboardTopListing]
     recent_sales: list[DashboardRecentSale]
-    agent_status: list[DashboardCategoryCount]
-    recent_agent_runs: list[DashboardAgentRun]
     listing_status: list[DashboardCategoryCount]
     inventory_bands: list[DashboardCategoryCount]
-
-
-class CompetitorRecordOut(BaseModel):
-    id: int
-    product_id: int
-    competitor_name: str
-    price: float
-    is_fba: bool
-    feedback_count: int
-    feedback_rating: float
-    timestamp: datetime
-
-    class Config:
-        from_attributes = True
-
-
-class ToolNoArgs(BaseModel):
-    pass
-
-
-class ListProductsToolArgs(BaseModel):
-    search: str | None = None
-    include_archived: bool = False
-
-
-class UpdateProductToolArgs(BaseModel):
-    product_id: int = Field(gt=0)
-    title: str | None = Field(default=None, min_length=1, max_length=255)
-    sku: str | None = Field(default=None, min_length=1, max_length=100)
-    sell_price: float | None = Field(default=None, ge=0)
-    stock: int | None = Field(default=None, ge=0)
-    marketplace: str | None = Field(default=None, min_length=1, max_length=100)
-
-    @model_validator(mode="after")
-    def require_any_field(self) -> "UpdateProductToolArgs":
-        if (
-            self.title is None
-            and self.sku is None
-            and self.sell_price is None
-            and self.stock is None
-            and self.marketplace is None
-        ):
-            raise ValueError("At least one product field must be provided for update")
-        return self
-
-    def to_product_update(self) -> ProductUpdate:
-        return ProductUpdate(
-            title=self.title,
-            sku=self.sku,
-            sell_price=self.sell_price,
-            stock=self.stock,
-            marketplace=self.marketplace,
-        )
-
-
-class ArchiveProductToolArgs(BaseModel):
-    product_id: int = Field(gt=0)
-
-
-class ListOrdersToolArgs(BaseModel):
-    search: str | None = None
-
-
-class PredictBuyboxToolArgs(BaseModel):
-    sku: str = Field(min_length=1, max_length=100)
-    SellPrice: float = Field(ge=0)
-    ShippingPrice: float = Field(default=0, ge=0)
-    MinCompetitorPrice: float = Field(ge=0)
-    PositiveFeedbackPercent: float = Field(default=95.0, ge=0, le=100)
-    IsFBA: float = Field(default=1.0)
-
-    def to_feature_input(self) -> BuyboxFeatureInput:
-        total_price = self.SellPrice + self.ShippingPrice
-        price_gap = self.SellPrice - self.MinCompetitorPrice
-        price_gap_percent = (
-            (price_gap / self.MinCompetitorPrice) * 100 if self.MinCompetitorPrice > 0 else 0.0
-        )
-        return BuyboxFeatureInput(
-            sku=self.sku,
-            SellPrice=self.SellPrice,
-            ShippingPrice=self.ShippingPrice,
-            TotalPrice=total_price,
-            MinCompetitorPrice=self.MinCompetitorPrice,
-            MinTotalPriceInSnapshot=self.MinCompetitorPrice,
-            PriceGap=price_gap,
-            TotalPriceGap=price_gap,
-            PriceGapPercent=price_gap_percent,
-            PriceRank=1.0,
-            PriceRankNormalized=1.0,
-            TotalCompetitorsInSnapshot=0.0,
-            PositiveFeedbackPercent=self.PositiveFeedbackPercent,
-            MaxFeedbackInSnapshot=100.0,
-            FeedbackGapFromMax=100.0 - self.PositiveFeedbackPercent,
-            IsMinSellPrice=1.0 if self.SellPrice <= self.MinCompetitorPrice else 0.0,
-            IsMinTotalPrice=1.0 if total_price <= self.MinCompetitorPrice else 0.0,
-            IsFBA=self.IsFBA,
-        )
-
-
-class ArchiveProductResult(BaseModel):
-    product_id: int
-    archived: bool
-
-
-class ToolDefinition(BaseModel):
-    name: str
-    description: str
-    input_schema: dict[str, Any]
-    output_schema: dict[str, Any]
-
-
-class ToolInvokeRequest(BaseModel):
-    tool_name: Literal[
-        "get_dashboard_overview",
-        "get_dashboard_summary",
-        "list_products",
-        "create_product",
-        "update_product",
-        "archive_product",
-        "list_orders",
-        "create_order",
-        "predict_buybox",
-    ]
-    arguments: dict[str, Any] = Field(default_factory=dict)
-
-
-class ToolInvokeResponse(BaseModel):
-    tool_name: str
-    result: Any

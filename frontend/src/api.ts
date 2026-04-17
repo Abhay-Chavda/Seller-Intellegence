@@ -67,13 +67,6 @@ export type DashboardRecentSale = {
   revenue: number;
 };
 
-export type DashboardAgentRun = {
-  name: string;
-  task_type: string;
-  status: string;
-  created_at: string;
-};
-
 export type DashboardOverview = {
   source: string;
   seller_display_name: string;
@@ -85,13 +78,10 @@ export type DashboardOverview = {
   total_units_sold: number;
   average_listing_price: number;
   prime_listings: number;
-  total_agents: number;
   marketplace_mix: DashboardMarketplaceMix[];
   revenue_trend: DashboardRevenuePoint[];
   top_listings: DashboardTopListing[];
   recent_sales: DashboardRecentSale[];
-  agent_status: DashboardCategoryCount[];
-  recent_agent_runs: DashboardAgentRun[];
   listing_status: DashboardCategoryCount[];
   inventory_bands: DashboardCategoryCount[];
 };
@@ -115,61 +105,6 @@ export type Order = {
     quantity: number;
     unit_price: number;
   }>;
-};
-
-export type BuyboxInput = {
-  sku: string;
-  SellPrice: number;
-  ShippingPrice: number;
-  TotalPrice: number;
-  MinCompetitorPrice: number;
-  MinTotalPriceInSnapshot: number;
-  PriceGap: number;
-  TotalPriceGap: number;
-  PriceGapPercent: number;
-  PriceRank: number;
-  PriceRankNormalized: number;
-  TotalCompetitorsInSnapshot: number;
-  PositiveFeedbackPercent: number;
-  MaxFeedbackInSnapshot: number;
-  FeedbackGapFromMax: number;
-  IsMinSellPrice: number;
-  IsMinTotalPrice: number;
-  IsFBA: number;
-};
-
-export type BuyboxPrediction = {
-  recommended_price: number;
-  confidence: number;
-  model_name: string;
-};
-
-export type AgentResponse = {
-  action: string;
-  result: string;
-};
-
-export type FoundryAgent = {
-  id: number;
-  seller_id: number;
-  agent_name: string;
-  agent_version: string;
-  model: string;
-  connection_id: string;
-  openapi_spec_url: string;
-  created_at: string;
-  updated_at: string;
-};
-
-export type CreateFoundryAgentPayload = {
-  connection_id?: string;
-  openapi_spec_url?: string;
-  agent_name?: string;
-};
-
-export type FoundryAgentCreateResponse = {
-  created: boolean;
-  agent: FoundryAgent;
 };
 
 async function request<T>(
@@ -283,39 +218,6 @@ export const api = {
       {
         method: "POST",
         body: JSON.stringify(payload),
-      },
-      token
-    );
-  },
-  predictBuybox(token: string, payload: BuyboxInput) {
-    return request<BuyboxPrediction>(
-      "/predict/buybox",
-      {
-        method: "POST",
-        body: JSON.stringify(payload),
-      },
-      token
-    );
-  },
-  getFoundryAgent(token: string) {
-    return request<FoundryAgent>("/foundry/agent", { method: "GET" }, token);
-  },
-  createFoundryAgent(token: string, payload: CreateFoundryAgentPayload = {}) {
-    return request<FoundryAgentCreateResponse>(
-      "/foundry/agent/create",
-      {
-        method: "POST",
-        body: JSON.stringify(payload),
-      },
-      token
-    );
-  },
-  agentChat(token: string, prompt: string) {
-    return request<AgentResponse>(
-      "/agent/chat",
-      {
-        method: "POST",
-        body: JSON.stringify({ prompt }),
       },
       token
     );
