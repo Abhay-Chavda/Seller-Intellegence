@@ -32,10 +32,15 @@ Use the file:
 
 - `azure_tools_api/render.yaml`
 
+Important:
+
+- Keep Render `Root Directory` empty or set it to the repo root.
+- Do not set the root directory to `azure_tools_api/`, because this package also imports shared code from `backend/`.
+
 Or create the service manually with:
 
 - Build command: `pip install -r azure_tools_api/requirements.txt`
-- Start command: `uvicorn azure_tools_api.main:app --host 0.0.0.0 --port $PORT --app-dir .`
+- Start command: `uvicorn azure_tools_api.main:app --host 0.0.0.0 --port $PORT`
 
 ## Give to Azure
 
