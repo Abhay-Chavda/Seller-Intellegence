@@ -1,28 +1,13 @@
-import random
+from collections import defaultdict
 from decimal import Decimal, ROUND_HALF_UP
-from datetime import datetime, timedelta
-from sqlalchemy.exc import IntegrityError
+
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.security import hash_password
-from app.models import (
-    AgentTask,
-    BuyboxPrediction,
-    CompetitorPriceRecord,
-    Order,
-    OrderItem,
-    Product,
-    User,
-    UserFoundryAgent,
-)
-from app.schemas import (
-    BuyboxFeatureInput,
-    OrderCreate,
-    ProductCreate,
-    ProductUpdate,
-    UserCreate,
-)
+from app.models import Order, OrderItem, Product, User
+from app.schemas import OrderCreate, ProductCreate, ProductUpdate, UserCreate
 
 
 def create_user(db: Session, payload: UserCreate) -> User:
@@ -52,35 +37,7 @@ def create_product(db: Session, seller_id: int, payload: ProductCreate) -> Produ
         db.rollback()
         raise ValueError("SKU already exists for this seller") from exc
     db.refresh(product)
-    
-    # Auto-seed competitor history for the presentation/model
-    seed_competitor_history(db, product.id, float(product.sell_price))
-    
     return product
-
-
-def seed_competitor_history(db: Session, product_id: int, current_price: float):
-    competitors = ["AlphaRetail", "BetaExpress", "GlobalLink", "PrimeSelect", "EliteGoods"]
-    
-    for comp_name in competitors:
-        # Create a price history for each competitor over the last 15 days
-        base_comp_price = current_price * random.uniform(0.95, 1.05)
-        
-        for days_back in range(15):
-            # Slight price fluctuations
-            daily_price = base_comp_price * random.uniform(0.99, 1.01)
-            record = CompetitorPriceRecord(
-                product_id=product_id,
-                competitor_name=comp_name,
-                price=round(daily_price, 2),
-                is_fba=random.choice([True, True, False]), # Mostly FBA
-                feedback_count=random.randint(100, 5000),
-                feedback_rating=round(random.uniform(4.2, 5.0), 1),
-                timestamp=datetime.utcnow() - timedelta(days=days_back)
-            )
-            db.add(record)
-    
-    db.commit()
 
 
 def list_products(
@@ -131,7 +88,6 @@ def update_product(db: Session, product: Product, payload: ProductUpdate) -> Pro
 
 
 def delete_product(db: Session, product: Product) -> None:
-    # Soft delete keeps historical order references valid.
     product.is_active = False
     db.add(product)
     db.commit()
@@ -186,7 +142,6 @@ def create_order(db: Session, seller_id: int, payload: OrderCreate) -> Order:
 
     total = Decimal("0.00")
     for item in payload.items:
-        # Security check: a seller can only create orders for their own products.
         product = get_product(db, seller_id=seller_id, product_id=item.product_id)
         if product is None:
             raise ValueError(f"Product {item.product_id} not found for this seller")
@@ -226,79 +181,12 @@ def list_orders(db: Session, seller_id: int, search: str | None = None) -> list[
     return list(db.scalars(stmt).all())
 
 
-def create_buybox_prediction(
-    db: Session,
-    seller_id: int,
-    features: BuyboxFeatureInput,
-    recommended_price: float,
-    confidence: float,
-    model_name: str,
-) -> BuyboxPrediction:
-    prediction = BuyboxPrediction(
-        seller_id=seller_id,
-        sku=features.sku,
-        recommended_price=recommended_price,
-        confidence=confidence,
-        model_name=model_name,
-    )
-    db.add(prediction)
-    db.commit()
-    db.refresh(prediction)
-    return prediction
-
-
-def create_agent_task(
-    db: Session,
-    seller_id: int,
-    prompt: str,
-    action: str,
-    result: str,
-) -> AgentTask:
-    task = AgentTask(seller_id=seller_id, prompt=prompt, action=action, result=result)
-    db.add(task)
-    db.commit()
-    db.refresh(task)
-    return task
-
-
-def get_user_foundry_agent(db: Session, seller_id: int) -> UserFoundryAgent | None:
-    return db.scalar(select(UserFoundryAgent).where(UserFoundryAgent.seller_id == seller_id))
-
-
-def create_user_foundry_agent(
-    db: Session,
-    seller_id: int,
-    agent_name: str,
-    agent_version: str,
-    model: str,
-    connection_id: str,
-    openapi_spec_url: str,
-) -> UserFoundryAgent:
-    record = UserFoundryAgent(
-        seller_id=seller_id,
-        agent_name=agent_name,
-        agent_version=agent_version,
-        model=model,
-        connection_id=connection_id,
-        openapi_spec_url=openapi_spec_url,
-    )
-    db.add(record)
-    try:
-        db.commit()
-    except IntegrityError as exc:
-        db.rollback()
-        raise ValueError("Foundry agent already exists for this user") from exc
-    db.refresh(record)
-    return record
-
-
 def get_dashboard_overview(db: Session, user: User) -> dict:
-    from collections import defaultdict
     products = list_products(db, seller_id=user.id)
     orders = list_orders(db, seller_id=user.id)
-    
+
     marketplace_counts = defaultdict(lambda: {"listings": 0, "price_total": 0.0})
-    status_mix = [{"label": "Active", "value": len(products)}] if products else []
+    listing_status = [{"label": "Active", "value": len(products)}] if products else []
     inventory_bands_map = {"Low stock": 0, "Watch list": 0, "Healthy": 0}
     order_by_product = defaultdict(lambda: {"revenue": 0.0, "units_sold": 0})
     recent_sales = []
@@ -323,13 +211,15 @@ def get_dashboard_overview(db: Session, user: User) -> dict:
 
         first_item = order.items[0] if order.items else None
         product_lookup = next((p for p in products if first_item and p.id == first_item.product_id), None)
-        recent_sales.append({
-            "sale_date": order.created_at.isoformat(),
-            "sku": product_lookup.sku if product_lookup else order.order_number,
-            "title": product_lookup.title if product_lookup else order.marketplace,
-            "units_sold": units,
-            "revenue": round(float(order.total_amount), 2)
-        })
+        recent_sales.append(
+            {
+                "sale_date": order.created_at.isoformat(),
+                "sku": product_lookup.sku if product_lookup else order.order_number,
+                "title": product_lookup.title if product_lookup else order.marketplace,
+                "units_sold": units,
+                "revenue": round(float(order.total_amount), 2),
+            }
+        )
 
         for item in order.items:
             order_by_product[item.product_id]["units_sold"] += int(item.quantity)
@@ -338,31 +228,41 @@ def get_dashboard_overview(db: Session, user: User) -> dict:
     top_listings = []
     for product in products:
         perf = order_by_product[product.id]
-        top_listings.append({
-            "sku": product.sku,
-            "title": product.title,
-            "marketplace": product.marketplace,
-            "status": "active",
-            "quantity": product.stock,
-            "price": round(float(product.sell_price), 2),
-            "competitor_low_price": None,
-            "revenue": round(float(perf["revenue"]), 2),
-            "units_sold": int(perf["units_sold"])
-        })
-    top_listings.sort(key=lambda x: (x["revenue"], x["units_sold"]), reverse=True)
-    
+        top_listings.append(
+            {
+                "sku": product.sku,
+                "title": product.title,
+                "marketplace": product.marketplace,
+                "status": "active",
+                "quantity": product.stock,
+                "price": round(float(product.sell_price), 2),
+                "competitor_low_price": None,
+                "revenue": round(float(perf["revenue"]), 2),
+                "units_sold": int(perf["units_sold"]),
+            }
+        )
+    top_listings.sort(key=lambda item: (item["revenue"], item["units_sold"]), reverse=True)
+
     revenue_trend = [
-        {"day": d, "revenue": round(float(data["revenue"]), 2), "units": int(data["units"])}
-        for d, data in sorted(trend_map.items())[-14:]
+        {"day": day, "revenue": round(float(data["revenue"]), 2), "units": int(data["units"])}
+        for day, data in sorted(trend_map.items())[-14:]
     ]
 
     marketplace_mix = [
         {
-            "marketplace": m,
+            "marketplace": marketplace,
             "listings": int(data["listings"]),
-            "avg_price": round(float(data["price_total"]) / int(data["listings"]), 2) if int(data["listings"]) else 0.0
+            "avg_price": (
+                round(float(data["price_total"]) / int(data["listings"]), 2)
+                if int(data["listings"])
+                else 0.0
+            ),
         }
-        for m, data in sorted(marketplace_counts.items(), key=lambda x: int(x[1]["listings"]), reverse=True)
+        for marketplace, data in sorted(
+            marketplace_counts.items(),
+            key=lambda item: int(item[1]["listings"]),
+            reverse=True,
+        )
     ]
 
     summary = get_dashboard_summary(db, seller_id=user.id)
@@ -377,13 +277,14 @@ def get_dashboard_overview(db: Session, user: User) -> dict:
         "total_units_sold": summary["total_units_sold"],
         "average_listing_price": round(float(summary["average_price"]), 2),
         "prime_listings": 0,
-        "total_agents": 0,
         "marketplace_mix": marketplace_mix,
         "revenue_trend": revenue_trend,
         "top_listings": top_listings[:8],
         "recent_sales": recent_sales[:8],
-        "agent_status": [],
-        "recent_agent_runs": [],
-        "listing_status": status_mix,
-        "inventory_bands": [{"label": k, "value": v} for k, v in inventory_bands_map.items() if v > 0]
+        "listing_status": listing_status,
+        "inventory_bands": [
+            {"label": label, "value": value}
+            for label, value in inventory_bands_map.items()
+            if value > 0
+        ],
     }

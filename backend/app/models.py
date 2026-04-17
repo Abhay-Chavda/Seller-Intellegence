@@ -5,7 +5,6 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
-    Float,
     ForeignKey,
     Index,
     Integer,
@@ -31,12 +30,6 @@ class User(Base):
 
     products: Mapped[list["Product"]] = relationship(back_populates="seller")
     orders: Mapped[list["Order"]] = relationship(back_populates="seller")
-    predictions: Mapped[list["BuyboxPrediction"]] = relationship(back_populates="seller")
-    agent_tasks: Mapped[list["AgentTask"]] = relationship(back_populates="seller")
-    foundry_agent: Mapped["UserFoundryAgent"] = relationship(
-        back_populates="seller",
-        uselist=False,
-    )
 
 
 class Product(Base):
@@ -64,7 +57,9 @@ class Product(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
     )
 
     seller: Mapped["User"] = relationship(back_populates="products")
@@ -104,68 +99,3 @@ class OrderItem(Base):
 
     order: Mapped["Order"] = relationship(back_populates="items")
     product: Mapped["Product"] = relationship(back_populates="order_items")
-
-
-class BuyboxPrediction(Base):
-    __tablename__ = "buybox_predictions"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    seller_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    sku: Mapped[str] = mapped_column(String(100), index=True)
-    recommended_price: Mapped[float] = mapped_column(Float)
-    confidence: Mapped[float] = mapped_column(Float, default=0.0)
-    model_name: Mapped[str] = mapped_column(String(100), default="fallback")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
-    seller: Mapped["User"] = relationship(back_populates="predictions")
-
-
-class AgentTask(Base):
-    __tablename__ = "agent_tasks"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    seller_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    prompt: Mapped[str] = mapped_column(String(1000))
-    action: Mapped[str] = mapped_column(String(120))
-    result: Mapped[str] = mapped_column(String(2000))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
-    seller: Mapped["User"] = relationship(back_populates="agent_tasks")
-
-
-class CompetitorPriceRecord(Base):
-    __tablename__ = "competitor_price_records"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
-    competitor_name: Mapped[str] = mapped_column(String(100), default="Competitor")
-    price: Mapped[float] = mapped_column(Float)
-    is_fba: Mapped[bool] = mapped_column(Boolean, default=True)
-    feedback_count: Mapped[int] = mapped_column(Integer, default=0)
-    feedback_rating: Mapped[float] = mapped_column(Float, default=0.0)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
-    product: Mapped["Product"] = relationship(backref="competitor_history")
-
-
-class UserFoundryAgent(Base):
-    __tablename__ = "user_foundry_agents"
-    __table_args__ = (
-        UniqueConstraint("seller_id", name="uq_user_foundry_agents_seller_id"),
-    )
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    seller_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    agent_name: Mapped[str] = mapped_column(String(200), index=True)
-    agent_version: Mapped[str] = mapped_column(String(40))
-    model: Mapped[str] = mapped_column(String(120))
-    connection_id: Mapped[str] = mapped_column(String(500))
-    openapi_spec_url: Mapped[str] = mapped_column(String(500))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
-    )
-
-    seller: Mapped["User"] = relationship(back_populates="foundry_agent")
