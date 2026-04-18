@@ -54,52 +54,16 @@ From repo root:
 ./azure_tools_api/run_dev.sh
 ```
 
-## Render setup
+## Deploy to Render
 
-Keep Render root directory at the repo root.
+Use the file:
 
-Build command:
+- `azure_tools_api/render.yaml`
 
-```bash
-pip install -r azure_tools_api/requirements.txt
-```
+Or create the service manually with:
 
-Start command:
-
-```bash
-uvicorn azure_tools_api.main:app --host 0.0.0.0 --port $PORT
-```
-
-## Required env vars
-
-Core app:
-
-- `DATABASE_URL`
-- `DATABASE_SCHEMA`
-- `JWT_SECRET_KEY`
-- `JWT_ALGORITHM`
-- `JWT_EXPIRE_MINUTES`
-- `CORS_ORIGINS`
-
-Azure agent:
-
-- `PROJECT_ENDPOINT`
-- `MODEL_DEPLOYMENT_NAME`
-- `AGENT_NAME_PREFIX` optional
-- `PUBLIC_BASE_URL` optional but recommended on Render
-
-Azure identity:
-
-- `AZURE_CLIENT_ID`
-- `AZURE_TENANT_ID`
-- `AZURE_CLIENT_SECRET`
-
-## Flow
-
-1. Login with `/auth/login`
-2. Create or refresh the agent with `/agent/create`
-3. Send messages with `/agent/chat`
-4. The created agent uses the anonymous `/agent-tools/{agent_key}/...` routes internally
+- Build command: `pip install -r azure_tools_api/requirements.txt`
+- Start command: `uvicorn azure_tools_api.main:app --host 0.0.0.0 --port $PORT --app-dir .`
 
 ## Give to Azure
 
