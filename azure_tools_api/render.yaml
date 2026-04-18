@@ -4,7 +4,7 @@ services:
     env: python
     plan: free
     buildCommand: pip install -r azure_tools_api/requirements.txt
-    startCommand: uvicorn azure_tools_api.main:app --host 0.0.0.0 --port $PORT --app-dir .
+    startCommand: uvicorn azure_tools_api.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
@@ -19,3 +19,17 @@ services:
         value: "120"
       - key: CORS_ORIGINS
         value: http://localhost:5173,http://127.0.0.1:5173
+      - key: PROJECT_ENDPOINT
+        sync: false
+      - key: MODEL_DEPLOYMENT_NAME
+        sync: false
+      - key: AGENT_NAME_PREFIX
+        value: seller-agent
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: AZURE_CLIENT_ID
+        sync: false
+      - key: AZURE_TENANT_ID
+        sync: false
+      - key: AZURE_CLIENT_SECRET
+        sync: false

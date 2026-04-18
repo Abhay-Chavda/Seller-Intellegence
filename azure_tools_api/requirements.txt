@@ -1,1 +1,4 @@
 -r ../backend/requirements.txt
+azure-ai-projects
+azure-identity
+openai

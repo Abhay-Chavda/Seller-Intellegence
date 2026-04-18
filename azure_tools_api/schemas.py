@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
@@ -70,3 +71,46 @@ class ToolInvokeRequest(BaseModel):
 class ToolInvokeResponse(BaseModel):
     tool_name: str
     result: Any
+
+
+class AgentOut(BaseModel):
+    id: int
+    seller_id: int
+    agent_id: str
+    agent_name: str
+    agent_version: str
+    instructions: str
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class CurrentAgentResponse(BaseModel):
+    agent: AgentOut | None
+
+
+class AgentCreateRequest(BaseModel):
+    instructions: str | None = None
+
+
+class AgentCreateResponse(BaseModel):
+    created: bool
+    agent: AgentOut
+
+
+class AgentChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1)
+
+
+class AgentChatRequest(BaseModel):
+    prompt: str = Field(min_length=1)
+    history: list[AgentChatMessage] = Field(default_factory=list)
+    reset_history: bool = False
+
+
+class AgentChatResponse(BaseModel):
+    reply: str
+    history: list[AgentChatMessage]

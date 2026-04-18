@@ -1,0 +1,251 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Seller Intelligence Tools API",
+    "description": "Tool API for managing seller dashboard, products, and orders.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://seller-intellegence.onrender.com"
+    }
+  ],
+  "paths": {
+    "/tools/get_dashboard_overview": {
+      "post": {
+        "operationId": "getDashboardOverview",
+        "summary": "Get dashboard overview",
+        "description": "Returns seller dashboard analytics overview",
+        "responses": {
+          "200": {
+            "description": "Dashboard overview data"
+          }
+        },
+        "security": [{ "bearerAuth": [] }]
+      }
+    },
+    "/tools/get_dashboard_summary": {
+      "post": {
+        "operationId": "getDashboardSummary",
+        "summary": "Get dashboard summary",
+        "description": "Returns summary metrics like total products, sales, etc.",
+        "responses": {
+          "200": {
+            "description": "Dashboard summary"
+          }
+        },
+        "security": [{ "bearerAuth": [] }]
+      }
+    },
+    "/tools/list_products": {
+      "post": {
+        "operationId": "listProducts",
+        "summary": "List products",
+        "description": "Returns list of seller products",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ListProductsToolArgs"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "List of products"
+          }
+        },
+        "security": [{ "bearerAuth": [] }]
+      }
+    },
+    "/tools/create_product": {
+      "post": {
+        "operationId": "createProduct",
+        "summary": "Create product",
+        "description": "Creates a new product",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Product created"
+          }
+        },
+        "security": [{ "bearerAuth": [] }]
+      }
+    },
+    "/tools/update_product": {
+      "post": {
+        "operationId": "updateProduct",
+        "summary": "Update product",
+        "description": "Updates an existing product",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProductToolArgs"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated product"
+          }
+        },
+        "security": [{ "bearerAuth": [] }]
+      }
+    },
+    "/tools/archive_product": {
+      "post": {
+        "operationId": "archiveProduct",
+        "summary": "Archive product",
+        "description": "Archives a product",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArchiveProductToolArgs"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Archive result"
+          }
+        },
+        "security": [{ "bearerAuth": [] }]
+      }
+    },
+    "/tools/list_orders": {
+      "post": {
+        "operationId": "listOrders",
+        "summary": "List orders",
+        "description": "Returns list of orders",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ListOrdersToolArgs"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "List of orders"
+          }
+        },
+        "security": [{ "bearerAuth": [] }]
+      }
+    },
+    "/tools/create_order": {
+      "post": {
+        "operationId": "createOrder",
+        "summary": "Create order",
+        "description": "Creates a new order",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Order created"
+          }
+        },
+        "security": [{ "bearerAuth": [] }]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ListProductsToolArgs": {
+        "type": "object",
+        "properties": {
+          "search": { "type": "string" },
+          "include_archived": { "type": "boolean", "default": false }
+        }
+      },
+      "ListOrdersToolArgs": {
+        "type": "object",
+        "properties": {
+          "search": { "type": "string" }
+        }
+      },
+      "ProductCreate": {
+        "type": "object",
+        "required": ["title", "sku", "sell_price", "stock", "marketplace"],
+        "properties": {
+          "title": { "type": "string" },
+          "sku": { "type": "string" },
+          "sell_price": { "type": "number" },
+          "stock": { "type": "integer" },
+          "marketplace": { "type": "string" }
+        }
+      },
+      "UpdateProductToolArgs": {
+        "type": "object",
+        "required": ["product_id"],
+        "properties": {
+          "product_id": { "type": "integer" },
+          "title": { "type": "string" },
+          "sku": { "type": "string" },
+          "sell_price": { "type": "number" },
+          "stock": { "type": "integer" },
+          "marketplace": { "type": "string" }
+        }
+      },
+      "ArchiveProductToolArgs": {
+        "type": "object",
+        "required": ["product_id"],
+        "properties": {
+          "product_id": { "type": "integer" }
+        }
+      },
+      "OrderCreate": {
+        "type": "object",
+        "required": ["order_number", "marketplace", "items"],
+        "properties": {
+          "order_number": { "type": "string" },
+          "marketplace": { "type": "string" },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "product_id": { "type": "integer" },
+                "quantity": { "type": "integer" },
+                "unit_price": { "type": "number" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}
