@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Seller Intelligence — Static Website</title>
+    <meta
+      name="description"
+      content="Seller Intelligence static website mock (HTML + CSS) with a tiny JavaScript login demo."
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="./index.html" aria-label="Seller Intelligence home">
+          <span class="logo" aria-hidden="true"></span>
+          <span>Seller Intelligence</span>
+        </a>
+        <nav class="nav" aria-label="Primary">
+          <a href="./index.html" aria-current="page">Home</a>
+          <a href="./login.html">Login</a>
+          <a class="btn btn-primary" href="./signup.html">Create account</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="container">
+      <section class="hero two-col">
+        <div>
+          <span class="pill">Static mock • HTML + CSS • Demo login</span>
+          <h1>Run seller operations with clarity.</h1>
+          <p>
+            A clean, modern static UI for Seller Intelligence: dashboard overview, inventory
+            management, and orders — designed as a lightweight mock that looks like a real product.
+          </p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="./login.html">Sign in</a>
+            <a class="btn btn-ghost" href="./dashboard.html">View dashboard (static)</a>
+          </div>
+          <p class="hint">
+            Note: Only the Login page uses a small amount of JavaScript to validate and redirect.
+            All other pages are static (HTML + CSS only).
+          </p>
+        </div>
+
+        <div class="mini-preview" aria-label="UI preview">
+          <div class="mini-preview-top">
+            <span class="pill">Preview</span>
+            <span class="dots" aria-hidden="true">
+              <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+            </span>
+          </div>
+          <div class="mini-preview-body">
+            <div class="shimmer-row mid"></div>
+            <div class="shimmer-row"></div>
+            <div class="shimmer-row short"></div>
+            <div class="divider" aria-hidden="true"></div>
+            <div class="shimmer-row"></div>
+            <div class="shimmer-row mid"></div>
+            <div class="shimmer-row short"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="grid" aria-label="Features">
+        <div class="card" style="grid-column: span 4">
+          <div class="card-inner">
+            <p class="card-title">Dashboard</p>
+            <p class="card-value">KPIs & quick insights</p>
+            <p class="hint">
+              Revenue, units sold, catalog size, and low-stock alerts in a single view.
+            </p>
+          </div>
+        </div>
+        <div class="card" style="grid-column: span 4">
+          <div class="card-inner">
+            <p class="card-title">Inventory</p>
+            <p class="card-value">Manage products</p>
+            <p class="hint">
+              Search, restock, archive items, and export — shown as a static table UI mock.
+            </p>
+          </div>
+        </div>
+        <div class="card" style="grid-column: span 4">
+          <div class="card-inner">
+            <p class="card-title">Orders</p>
+            <p class="card-value">Track fulfillment</p>
+            <p class="hint">
+              Filter by date, view statuses, and export orders (static UI with realistic styling).
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <footer class="footer">
+        Built as a static folder for this project: pure HTML + CSS (plus a small JavaScript login
+        demo).
+      </footer>
+    </main>
+  </body>
+</html>
+

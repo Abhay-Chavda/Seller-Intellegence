@@ -35,6 +35,47 @@ const dashboardPages: Array<{ id: Exclude<DashboardPage, "admin">; label: string
 ];
 
 const adminDashboardPage = { id: "admin" as const, label: "Admin", icon: "🛠️" };
+const landingMetrics: Array<{ value: string; label: string; description: string }> = [
+  {
+    value: "Live",
+    label: "seller dashboard",
+    description: "See revenue, units sold, catalog size, and low-stock pressure as soon as you log in.",
+  },
+  {
+    value: "Fast",
+    label: "inventory actions",
+    description: "Update listings, change pricing, and restock products without moving across multiple tools.",
+  },
+  {
+    value: "Simple",
+    label: "order flow",
+    description: "Create orders, search records, and export seller data from one clean workspace.",
+  },
+];
+const landingFeatures: Array<{ title: string; description: string }> = [
+  {
+    title: "Performance dashboard",
+    description: "Follow revenue movement, order activity, and low-stock alerts without juggling spreadsheets or tabs.",
+  },
+  {
+    title: "Inventory control",
+    description: "Search products, update stock, edit pricing, and keep your catalog ready for daily seller operations.",
+  },
+  {
+    title: "Order management",
+    description: "Create new orders, filter activity by date, and keep marketplace sales records organized in one place.",
+  },
+  {
+    title: "Seller assistant",
+    description: "Use your connected AI assistant to help with seller workflows, product operations, and everyday questions.",
+  },
+];
+const landingQuickFeatures = [
+  "Dashboard visibility",
+  "Product updates",
+  "Low-stock tracking",
+  "Order exports",
+];
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
@@ -70,9 +111,41 @@ function downloadCSV(data: any[], filename: string) {
 const COLORS = ['#6366f1', '#a855f7', '#ec4899', '#22d3ee', '#10b981', '#f59e0b'];
 const LOW_STOCK_LIMIT = 10;
 const QUICK_RESTOCK_UNITS = 10;
+const DASHBOARD_RANGE_OPTIONS = [7, 14, 30, 90, 365] as const;
 
 function getGeneratedOrderNumber(): string {
   return `ORD-${Date.now().toString().slice(-8)}`;
+}
+
+function getDashboardRangeLabel(days: number): string {
+  return days >= 365 ? "1 year" : `${days} days`;
+}
+
+function formatChartDate(value: string, rangeDays: number): string {
+  if (!value) return "N/A";
+  try {
+    return new Intl.DateTimeFormat(
+      "en-US",
+      rangeDays >= 365
+        ? { month: "short" }
+        : { month: "short", day: "numeric" }
+    ).format(new Date(value));
+  } catch (e) {
+    return "N/A";
+  }
+}
+
+function formatLongDate(value: string): string {
+  if (!value) return "N/A";
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }).format(new Date(value));
+  } catch (e) {
+    return "N/A";
+  }
 }
 
 function renderInlineAgentText(text: string): ReactNode[] {
@@ -145,6 +218,7 @@ export default function App() {
     return saved === "light" ? "light" : "dark";
   });
   const [mode, setMode] = useState<AuthMode>("login");
+  const [showLanding, setShowLanding] = useState<boolean>(() => !Boolean(localStorage.getItem("token")));
   const [page, setPage] = useState<DashboardPage>("overview");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -162,7 +236,7 @@ export default function App() {
   const [isAddingProduct, setIsAddingProduct] = useState(false);
   const [isAddingOrder, setIsAddingOrder] = useState(false);
   const [restockingProductId, setRestockingProductId] = useState<number | null>(null);
-  const [dashboardDays, setDashboardDays] = useState(14);
+  const [dashboardDays, setDashboardDays] = useState(365);
   const [ordersFrom, setOrdersFrom] = useState("");
   const [ordersTo, setOrdersTo] = useState("");
   const [currentAgent, setCurrentAgent] = useState<Agent | null>(null);
@@ -203,6 +277,7 @@ export default function App() {
       err.status === 401
     ) {
       handleLogout();
+      setShowLanding(false);
       setMessage("Session expired. Please sign in again.");
       setMessageTone("error");
       return true;
@@ -226,8 +301,21 @@ export default function App() {
     setShowPassword(false);
   }
 
+  function openAuth(nextMode: AuthMode) {
+    setMode(nextMode);
+    setShowLanding(false);
+    resetAuthForm();
+    setMessage("");
+  }
+
+  function handleBackToLanding() {
+    setShowLanding(true);
+    resetAuthForm();
+    setMessage("");
+  }
+
   function handleAuthModeSwitch() {
-    setMode(mode === "login" ? "signup" : "login");
+    setMode(current => current === "login" ? "signup" : "login");
     resetAuthForm();
     setMessage("");
   }
@@ -244,6 +332,7 @@ export default function App() {
     setAdminSubscriptions([]);
     setAdminAgentUsage([]);
     setMode("login");
+    setShowLanding(true);
     resetAuthForm();
     setMessage("");
   }
@@ -619,6 +708,7 @@ export default function App() {
     () => dashboardRevenueTrend.reduce((total, point) => total + point.units, 0),
     [dashboardRevenueTrend]
   );
+  const dashboardRangeLabel = getDashboardRangeLabel(dashboardDays);
 
   const filteredOrders = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -694,84 +784,161 @@ export default function App() {
   if (!token || !user || !overview) {
     return (
       <div className="auth-shell">
-        <div className="auth-card">
-          <div className="theme-toggle-row">
-            <button type="button" className="theme-toggle-btn" onClick={toggleTheme}>
-              <span>{theme === "dark" ? "☀️" : "🌙"}</span>
-              <span>{theme === "dark" ? "Light Theme" : "Dark Theme"}</span>
-            </button>
-          </div>
-          <h1>{mode === "login" ? "Welcome Back" : "Get Started"}</h1>
-          <p>
-            {mode === "login" 
-              ? "Enter your credentials to access your intelligence dashboard." 
-              : "Launch your premium seller workspace today."}
-          </p>
-          
-          <form onSubmit={onAuth} className="auth-form">
-            {mode === "signup" && (
-              <div className="input-group">
-                <span className="input-label">Full Name</span>
-                <input 
-                  className="auth-input" 
-                  placeholder="John Doe" 
-                  value={name} 
-                  onChange={e => setName(e.target.value)} 
-                  required 
-                />
-              </div>
-            )}
-            
-            <div className="input-group">
-              <span className="input-label">Email Address</span>
-              <input 
-                className="auth-input" 
-                placeholder="e.g. seller@willow.local" 
-                type="email" 
-                value={email} 
-                onChange={e => setEmail(e.target.value)} 
-                required 
-              />
-            </div>
-            
-            <div className="input-group">
-              <span className="input-label">Password</span>
-              <div className="auth-password-wrap">
-                <input 
-                  className="auth-input password-input" 
-                  placeholder="Enter your secure password" 
-                  type={showPassword ? "text" : "password"} 
-                  value={password} 
-                  onChange={e => setPassword(e.target.value)} 
-                  required 
-                />
-                <button
-                  type="button"
-                  className="password-toggle-btn"
-                  onClick={() => setShowPassword(current => !current)}
-                >
-                  {showPassword ? "Hide" : "Show"}
-                </button>
+        <div className="landing-layout">
+          <section className="landing-panel">
+            <div className="landing-brand">
+              <img src="/logo-mark.svg" alt="SellerIntel logo" className="landing-logo" />
+              <div>
+                <span className="landing-eyebrow">Seller Intelligence Platform</span>
+                <h1>Run your seller operations from one clear, connected workspace.</h1>
               </div>
             </div>
-            
-            <button className="auth-btn" disabled={loading}>
-              {loading ? "Processing..." : mode === "login" ? "Sign In" : "Create Account"}
-            </button>
-          </form>
-          
-          <div className="auth-switch">
-            {mode === "login" ? "Don't have an account?" : "Already have an account?"}
-            <button className="auth-switch-btn" onClick={handleAuthModeSwitch}>
-              {mode === "login" ? "Sign Up" : "Back to Login"}
-            </button>
-          </div>
-          
-          {message && (
-            <p style={{ color: messageTone === "error" ? 'var(--error)' : 'var(--success)', marginTop: '1.5rem', fontWeight: '500' }}>
-              {message}
+
+            <p className="landing-copy">
+              SellerIntel helps marketplace sellers track performance, manage inventory, organize orders,
+              and coordinate AI-assisted workflows without bouncing between disconnected tools.
             </p>
-          )}
+
+            <div className="landing-metric-grid">
+              {landingMetrics.map(metric => (
+                <article key={metric.label} className="landing-metric-card">
+                  <span className="landing-metric-value">{metric.value}</span>
+                  <span className="landing-metric-label">{metric.label}</span>
+                  <p>{metric.description}</p>
+                </article>
+              ))}
+            </div>
+
+            <div className="landing-section-head">
+              <span className="landing-section-kicker">What you can do</span>
+              <h2>Built for day-to-day seller execution</h2>
+            </div>
+            <div className="landing-feature-grid">
+              {landingFeatures.map(feature => (
+                <article key={feature.title} className="landing-feature-card">
+                  <h3>{feature.title}</h3>
+                  <p>{feature.description}</p>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <div className={`auth-card landing-cta-card ${showLanding ? "landing-cta-card--home" : "landing-cta-card--auth"}`}>
+            <div className="theme-toggle-row">
+              <button type="button" className="theme-toggle-btn" onClick={toggleTheme}>
+                <span>{theme === "dark" ? "☀️" : "🌙"}</span>
+                <span>{theme === "dark" ? "Light Theme" : "Dark Theme"}</span>
+              </button>
+            </div>
+
+            {showLanding ? (
+              <>
+                <span className="landing-badge">Start here</span>
+                <h2>Access SellerIntel</h2>
+                <p className="landing-cta-copy">
+                  Sign in to continue with your seller workspace, or create a new account to start managing products,
+                  orders, and insights from one dashboard.
+                </p>
+
+                <div className="landing-action-group">
+                  <button type="button" className="auth-btn" onClick={() => openAuth("login")}>
+                    Login
+                  </button>
+                  <button type="button" className="auth-btn auth-btn-secondary" onClick={() => openAuth("signup")}>
+                    Sign Up
+                  </button>
+                </div>
+
+                <div className="landing-quick-features">
+                  <span className="landing-quick-features-label">Built for sellers</span>
+                  <div className="landing-chip-row">
+                    {landingQuickFeatures.map(feature => (
+                      <span key={feature} className="landing-chip">
+                        {feature}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <button type="button" className="landing-back-btn" onClick={handleBackToLanding}>
+                  Back to home
+                </button>
+                <h1>{mode === "login" ? "Welcome Back" : "Get Started"}</h1>
+                <p>
+                  {mode === "login"
+                    ? "Enter your credentials to access your intelligence dashboard."
+                    : "Create your seller workspace and start managing operations in one place."}
+                </p>
+
+                <form onSubmit={onAuth} className="auth-form">
+                  {mode === "signup" && (
+                    <div className="input-group">
+                      <span className="input-label">Full Name</span>
+                      <input
+                        className="auth-input"
+                        placeholder="John Doe"
+                        value={name}
+                        onChange={e => setName(e.target.value)}
+                        required
+                      />
+                    </div>
+                  )}
+
+                  <div className="input-group">
+                    <span className="input-label">Email Address</span>
+                    <input
+                      className="auth-input"
+                      placeholder="e.g. seller@willow.local"
+                      type="email"
+                      value={email}
+                      onChange={e => setEmail(e.target.value)}
+                      required
+                    />
+                  </div>
+
+                  <div className="input-group">
+                    <span className="input-label">Password</span>
+                    <div className="auth-password-wrap">
+                      <input
+                        className="auth-input password-input"
+                        placeholder="Enter your secure password"
+                        type={showPassword ? "text" : "password"}
+                        value={password}
+                        onChange={e => setPassword(e.target.value)}
+                        required
+                      />
+                      <button
+                        type="button"
+                        className="password-toggle-btn"
+                        onClick={() => setShowPassword(current => !current)}
+                      >
+                        {showPassword ? "Hide" : "Show"}
+                      </button>
+                    </div>
+                  </div>
+
+                  <button className="auth-btn" disabled={loading}>
+                    {loading ? "Processing..." : mode === "login" ? "Sign In" : "Create Account"}
+                  </button>
+                </form>
+
+                <div className="auth-switch">
+                  {mode === "login" ? "Don't have an account?" : "Already have an account?"}
+                  <button type="button" className="auth-switch-btn" onClick={handleAuthModeSwitch}>
+                    {mode === "login" ? "Sign Up" : "Back to Login"}
+                  </button>
+                </div>
+
+                {message && (
+                  <p className="auth-message" style={{ color: messageTone === "error" ? "var(--error)" : "var(--success)" }}>
+                    {message}
+                  </p>
+                )}
+              </>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -865,14 +1032,14 @@ export default function App() {
             <div className="filter-row">
               <span className="filter-label">Dashboard Range</span>
               <div className="filter-chip-group">
-                {[7, 14, 30, 90].map(days => (
+                {DASHBOARD_RANGE_OPTIONS.map(days => (
                   <button
                     key={days}
                     type="button"
                     className={`filter-chip ${dashboardDays === days ? "active" : ""}`}
                     onClick={() => setDashboardDays(days)}
                   >
-                    {days} days
+                    {getDashboardRangeLabel(days)}
                   </button>
                 ))}
               </div>
@@ -882,12 +1049,12 @@ export default function App() {
               <div className="card stat-card">
                 <span className="stat-label">Total Revenue</span>
                 <span className="stat-value">{formatCurrency(dashboardRevenueTotal)}</span>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Last {dashboardDays} days</div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Last {dashboardRangeLabel}</div>
               </div>
               <div className="card stat-card">
                 <span className="stat-label">Units Sold</span>
                 <span className="stat-value">{formatInteger(dashboardUnitsTotal)}</span>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Last {dashboardDays} days</div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Last {dashboardRangeLabel}</div>
               </div>
               <div className="card stat-card">
                 <span className="stat-label">Catalog Size</span>
@@ -901,12 +1068,17 @@ export default function App() {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1.5rem' }}>
-              <div className="card">
-                <h3 style={{ marginBottom: '1.5rem', fontFamily: 'Outfit', fontSize: '1.25rem' }}>Revenue Flow ({dashboardDays}d)</h3>
-                <div style={{ width: '100%', height: 300 }}>
+            <div className="dashboard-panels">
+              <div className="card revenue-flow-card">
+                <div className="section-head" style={{ marginBottom: '1.5rem' }}>
+                  <div>
+                    <h3 style={{ fontFamily: 'Outfit', fontSize: '1.35rem' }}>Revenue Flow</h3>
+                    <p className="section-copy">Daily revenue across the last {dashboardRangeLabel}.</p>
+                  </div>
+                </div>
+                <div style={{ width: '100%', height: 360 }}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={[...dashboardRevenueTrend].reverse()}>
+                    <AreaChart data={dashboardRevenueTrend} margin={{ top: 12, right: 12, bottom: 0, left: 0 }}>
                       <defs>
                         <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.3}/>
@@ -914,56 +1086,69 @@ export default function App() {
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 4" vertical={false} stroke="var(--chart-grid)" />
-                      <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{fill: 'var(--text-muted)', fontSize: 10}} tickFormatter={formatShortDate} />
+                      <XAxis
+                        dataKey="day"
+                        axisLine={false}
+                        tickLine={false}
+                        minTickGap={28}
+                        tick={{fill: 'var(--text-muted)', fontSize: 10}}
+                        tickFormatter={(value) => formatChartDate(value, dashboardDays)}
+                      />
                       <YAxis axisLine={false} tickLine={false} tick={{fill: 'var(--text-muted)', fontSize: 10}} tickFormatter={val => `$${val}`} />
-                      <Tooltip contentStyle={{background: 'var(--bg-accent)', border: '1px solid var(--glass-border)', borderRadius: '12px', backdropFilter: 'blur(10px)'}} />
+                      <Tooltip
+                        labelFormatter={(value) => formatLongDate(String(value))}
+                        contentStyle={{background: 'var(--bg-accent)', border: '1px solid var(--glass-border)', borderRadius: '12px', backdropFilter: 'blur(10px)'}}
+                      />
                       <Area type="monotone" dataKey="revenue" stroke="var(--primary)" fillOpacity={1} fill="url(#colorRevenue)" strokeWidth={3} />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
               </div>
-              <div className="card">
-                <h3 style={{ marginBottom: '1.5rem', fontFamily: 'Outfit', fontSize: '1.25rem' }}>Marketplace Distribution</h3>
-                <div style={{ width: '100%', height: 300 }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={overview.marketplace_mix}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={60}
-                        outerRadius={80}
-                        paddingAngle={5}
-                        dataKey="listings"
-                        nameKey="marketplace"
-                      >
-                        {overview.marketplace_mix.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip 
-                        contentStyle={{background: 'var(--bg-accent)', border: '1px solid var(--glass-border)', borderRadius: '12px'}} 
-                        itemStyle={{color: 'var(--text-primary)'}}
-                      />
-                      <Legend iconType="circle" wrapperStyle={{fontSize: '10px', paddingTop: '10px'}} />
-                    </PieChart>
-                  </ResponsiveContainer>
+
+              <div className="secondary-panels-grid">
+                <div className="card">
+                  <h3 style={{ marginBottom: '1.5rem', fontFamily: 'Outfit', fontSize: '1.25rem' }}>Marketplace Distribution</h3>
+                  <div style={{ width: '100%', height: 300 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={overview.marketplace_mix}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={60}
+                          outerRadius={80}
+                          paddingAngle={5}
+                          dataKey="listings"
+                          nameKey="marketplace"
+                        >
+                          {overview.marketplace_mix.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip 
+                          contentStyle={{background: 'var(--bg-accent)', border: '1px solid var(--glass-border)', borderRadius: '12px'}} 
+                          itemStyle={{color: 'var(--text-primary)'}}
+                        />
+                        <Legend iconType="circle" wrapperStyle={{fontSize: '10px', paddingTop: '10px'}} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
                 </div>
-              </div>
-              <div className="card">
-                <h3 style={{ marginBottom: '1.5rem', fontFamily: 'Outfit', fontSize: '1.25rem' }}>Listing Mix</h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                  {overview.marketplace_mix.map((m, idx) => (
-                    <div key={m.marketplace}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
-                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{m.marketplace}</span>
-                        <span style={{ fontWeight: '700', fontSize: '0.8rem' }}>{m.listings}</span>
+                <div className="card">
+                  <h3 style={{ marginBottom: '1.5rem', fontFamily: 'Outfit', fontSize: '1.25rem' }}>Listing Mix</h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                    {overview.marketplace_mix.map((m, idx) => (
+                      <div key={m.marketplace}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+                          <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{m.marketplace}</span>
+                          <span style={{ fontWeight: '700', fontSize: '0.8rem' }}>{m.listings}</span>
+                        </div>
+                        <div style={{ height: '4px', background: 'var(--surface-soft)', borderRadius: '10px', overflow: 'hidden' }}>
+                          <div style={{ height: '100%', background: COLORS[idx % COLORS.length], width: `${overview.total_listings ? (m.listings / overview.total_listings) * 100 : 0}%` }}></div>
+                        </div>
                       </div>
-                      <div style={{ height: '4px', background: 'var(--surface-soft)', borderRadius: '10px', overflow: 'hidden' }}>
-                        <div style={{ height: '100%', background: COLORS[idx % COLORS.length], width: `${overview.total_listings ? (m.listings / overview.total_listings) * 100 : 0}%` }}></div>
-                      </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>

@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Orders — Seller Intelligence</title>
+    <meta name="description" content="Static orders UI mock (HTML + CSS only)." />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="./index.html" aria-label="Seller Intelligence home">
+          <span class="logo" aria-hidden="true"></span>
+          <span>Seller Intelligence</span>
+        </a>
+        <nav class="nav" aria-label="Primary">
+          <a href="./dashboard.html">Dashboard</a>
+          <a href="./inventory.html">Inventory</a>
+          <a href="./orders.html" aria-current="page">Orders</a>
+          <a class="btn btn-ghost" href="./login.html">Logout</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="container">
+      <div class="hero" style="padding-top: 10px">
+        <span class="pill">Orders • Management</span>
+        <h1 style="margin-bottom: 8px">Orders</h1>
+        <p class="subtle">
+          Static mock of the orders management UI (filters/actions are not wired).
+        </p>
+      </div>
+
+      <section class="card" aria-label="Orders table">
+        <div class="card-inner">
+          <div class="help-row" style="margin-bottom: 12px">
+            <div style="display: grid; gap: 10px; grid-template-columns: 1fr 1fr; width: min(560px, 100%)">
+              <div class="field">
+                <label for="from">From</label>
+                <input class="input" id="from" name="from" type="date" />
+              </div>
+              <div class="field">
+                <label for="to">To</label>
+                <input class="input" id="to" name="to" type="date" />
+              </div>
+            </div>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end">
+              <a class="btn" href="./orders.html">Export</a>
+              <a class="btn btn-primary" href="./orders.html">Create order</a>
+            </div>
+          </div>
+
+          <div class="table-wrap" role="region" aria-label="Orders table" tabindex="0">
+            <table>
+              <thead>
+                <tr>
+                  <th>Order</th>
+                  <th>Date</th>
+                  <th>Customer</th>
+                  <th>Items</th>
+                  <th>Total</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>#10482</td>
+                  <td>2026-04-21</td>
+                  <td>R. Mehta</td>
+                  <td>3</td>
+                  <td>$129.00</td>
+                  <td><span class="tag ok">Paid</span></td>
+                  <td><a href="./orders.html">View</a> · <a href="./orders.html">Invoice</a></td>
+                </tr>
+                <tr>
+                  <td>#10481</td>
+                  <td>2026-04-20</td>
+                  <td>A. Singh</td>
+                  <td>1</td>
+                  <td>$58.99</td>
+                  <td><span class="tag warn">Processing</span></td>
+                  <td><a href="./orders.html">View</a> · <a href="./orders.html">Cancel</a></td>
+                </tr>
+                <tr>
+                  <td>#10480</td>
+                  <td>2026-04-19</td>
+                  <td>K. Patel</td>
+                  <td>5</td>
+                  <td>$240.00</td>
+                  <td><span class="tag ok">Shipped</span></td>
+                  <td><a href="./orders.html">View</a> · <a href="./orders.html">Track</a></td>
+                </tr>
+                <tr>
+                  <td>#10479</td>
+                  <td>2026-04-19</td>
+                  <td>S. Shah</td>
+                  <td>1</td>
+                  <td>$18.50</td>
+                  <td><span class="tag bad">Refund</span></td>
+                  <td><a href="./orders.html">View</a> · <a href="./orders.html">Details</a></td>
+                </tr>
+                <tr>
+                  <td>#10478</td>
+                  <td>2026-04-18</td>
+                  <td>P. Rao</td>
+                  <td>2</td>
+                  <td>$79.00</td>
+                  <td><span class="tag ok">Delivered</span></td>
+                  <td><a href="./orders.html">View</a> · <a href="./orders.html">Return</a></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="hint" style="margin: 12px 0 0">
+            This page is static HTML + CSS only.
+          </p>
+        </div>
+      </section>
+
+      <footer class="footer">Orders page (static). No JavaScript on this page.</footer>
+    </main>
+  </body>
+</html>
+

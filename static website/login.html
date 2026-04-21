@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Login — Seller Intelligence</title>
+    <meta name="description" content="Static login page demo (minimal JavaScript)." />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="./index.html" aria-label="Seller Intelligence home">
+          <span class="logo" aria-hidden="true"></span>
+          <span>Seller Intelligence</span>
+        </a>
+        <nav class="nav" aria-label="Primary">
+          <a href="./index.html">Home</a>
+          <a href="./login.html" aria-current="page">Login</a>
+          <a href="./signup.html">Create account</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="auth-shell">
+      <section class="card auth-card" aria-label="Login">
+        <div class="auth-left">
+          <span class="pill">Seller operations • Static UI</span>
+          <h1 style="margin: 14px 0 10px; letter-spacing: -0.04em">Welcome back</h1>
+          <p class="subtle" style="margin: 0; line-height: 1.6">
+            Sign in to view your dashboard, inventory, and orders. This is a static mock — the form
+            below uses a tiny bit of JavaScript only to validate input and redirect.
+          </p>
+          <div class="divider" aria-hidden="true"></div>
+          <p class="hint" style="margin: 0">
+            Tip: Enter any email + any password and press <strong>Sign in</strong>.
+          </p>
+        </div>
+
+        <div class="auth-right">
+          <form class="form" id="loginForm" novalidate>
+            <div class="alert" id="errorBox" role="alert" aria-live="polite"></div>
+
+            <div class="field">
+              <label for="email">Email</label>
+              <input
+                class="input"
+                id="email"
+                name="email"
+                type="email"
+                placeholder="you@company.com"
+                autocomplete="email"
+                required
+              />
+            </div>
+
+            <div class="field">
+              <label for="password">Password</label>
+              <input
+                class="input"
+                id="password"
+                name="password"
+                type="password"
+                placeholder="••••••••"
+                autocomplete="current-password"
+                required
+                minlength="4"
+              />
+            </div>
+
+            <div class="help-row">
+              <label class="checkbox">
+                <input id="remember" name="remember" type="checkbox" checked />
+                <span>Remember me</span>
+              </label>
+              <a href="./login.html" class="subtle">Forgot password?</a>
+            </div>
+
+            <button class="btn btn-primary" id="submitBtn" type="submit">Sign in</button>
+
+            <p class="hint" style="margin: 0">
+              Don’t have an account? <a href="./signup.html">Create one</a>.
+            </p>
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      // Minimal JavaScript (login only): validate + redirect.
+      (function () {
+        const form = document.getElementById("loginForm");
+        const errorBox = document.getElementById("errorBox");
+        const submitBtn = document.getElementById("submitBtn");
+        const emailInput = document.getElementById("email");
+        const passwordInput = document.getElementById("password");
+        const rememberInput = document.getElementById("remember");
+
+        function showError(message) {
+          errorBox.textContent = message;
+          errorBox.classList.add("show");
+        }
+
+        function clearError() {
+          errorBox.textContent = "";
+          errorBox.classList.remove("show");
+        }
+
+        function setBusy(isBusy) {
+          submitBtn.disabled = isBusy;
+          submitBtn.textContent = isBusy ? "Signing in…" : "Sign in";
+        }
+
+        form.addEventListener("submit", function (e) {
+          e.preventDefault();
+          clearError();
+
+          const email = (emailInput.value || "").trim();
+          const password = passwordInput.value || "";
+
+          if (!email) return showError("Please enter your email.");
+          if (!email.includes("@")) return showError("Please enter a valid email address.");
+          if (!password) return showError("Please enter your password.");
+          if (password.length < 4) return showError("Password must be at least 4 characters.");
+
+          setBusy(true);
+
+          // Store a tiny "session" marker to simulate a login.
+          try {
+            const session = {
+              email,
+              remember: !!rememberInput.checked,
+              ts: Date.now(),
+            };
+            localStorage.setItem("si_session", JSON.stringify(session));
+          } catch (_) {
+            // Ignore storage errors (private browsing, etc.)
+          }
+
+          setTimeout(function () {
+            window.location.href = "./dashboard.html";
+          }, 500);
+        });
+      })();
+    </script>
+  </body>
+</html>
+

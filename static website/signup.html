@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Create Account — Seller Intelligence</title>
+    <meta name="description" content="Static signup page mock (HTML + CSS only)." />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="./index.html" aria-label="Seller Intelligence home">
+          <span class="logo" aria-hidden="true"></span>
+          <span>Seller Intelligence</span>
+        </a>
+        <nav class="nav" aria-label="Primary">
+          <a href="./index.html">Home</a>
+          <a href="./login.html">Login</a>
+          <a href="./signup.html" aria-current="page">Create account</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="auth-shell">
+      <section class="card auth-card" aria-label="Create account">
+        <div class="auth-left">
+          <span class="pill">Static mock</span>
+          <h1 style="margin: 14px 0 10px; letter-spacing: -0.04em">Create your account</h1>
+          <p class="subtle" style="margin: 0; line-height: 1.6">
+            This page is HTML + CSS only. It’s designed as a UI mock, so the form is not wired to a
+            backend.
+          </p>
+          <div class="divider" aria-hidden="true"></div>
+          <p class="hint" style="margin: 0">
+            Already have an account? <a href="./login.html">Sign in</a>.
+          </p>
+        </div>
+
+        <div class="auth-right">
+          <form class="form" action="./login.html" method="get">
+            <div class="field">
+              <label for="name">Full name</label>
+              <input class="input" id="name" name="name" type="text" placeholder="Your name" />
+            </div>
+
+            <div class="field">
+              <label for="email">Email</label>
+              <input
+                class="input"
+                id="email"
+                name="email"
+                type="email"
+                placeholder="you@company.com"
+                autocomplete="email"
+              />
+            </div>
+
+            <div class="field">
+              <label for="password">Password</label>
+              <input
+                class="input"
+                id="password"
+                name="password"
+                type="password"
+                placeholder="Create a password"
+              />
+            </div>
+
+            <button class="btn btn-primary" type="submit">Create account (mock)</button>
+
+            <p class="hint" style="margin: 0">
+              By creating an account you agree to the (mock) Terms & Privacy Policy.
+            </p>
+          </form>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
+

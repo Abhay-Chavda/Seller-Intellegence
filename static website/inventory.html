@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Inventory — Seller Intelligence</title>
+    <meta name="description" content="Static inventory UI mock (HTML + CSS only)." />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="./index.html" aria-label="Seller Intelligence home">
+          <span class="logo" aria-hidden="true"></span>
+          <span>Seller Intelligence</span>
+        </a>
+        <nav class="nav" aria-label="Primary">
+          <a href="./dashboard.html">Dashboard</a>
+          <a href="./inventory.html" aria-current="page">Inventory</a>
+          <a href="./orders.html">Orders</a>
+          <a class="btn btn-ghost" href="./login.html">Logout</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="container">
+      <div class="hero" style="padding-top: 10px">
+        <span class="pill">Inventory • Products</span>
+        <h1 style="margin-bottom: 8px">Inventory</h1>
+        <p class="subtle">Static mock of the inventory management UI (search/actions are not wired).</p>
+      </div>
+
+      <section class="card" aria-label="Inventory table">
+        <div class="card-inner">
+          <div class="help-row" style="margin-bottom: 12px">
+            <div class="field" style="max-width: 420px; width: 100%">
+              <label for="q">Search</label>
+              <input class="input" id="q" name="q" type="search" placeholder="Search by SKU or product…" />
+            </div>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end">
+              <a class="btn" href="./inventory.html">Export CSV</a>
+              <a class="btn btn-primary" href="./inventory.html">Add product</a>
+            </div>
+          </div>
+
+          <div class="table-wrap" role="region" aria-label="Inventory items table" tabindex="0">
+            <table>
+              <thead>
+                <tr>
+                  <th>SKU</th>
+                  <th>Product</th>
+                  <th>Category</th>
+                  <th>Price</th>
+                  <th>On hand</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>SI-AX19</td>
+                  <td>Wireless Mouse (Ergo)</td>
+                  <td>Accessories</td>
+                  <td>$24.99</td>
+                  <td>6</td>
+                  <td><span class="tag warn">Low</span></td>
+                  <td>
+                    <a href="./inventory.html">Edit</a> · <a href="./inventory.html">Quick restock</a>
+                  </td>
+                </tr>
+                <tr>
+                  <td>SI-KB07</td>
+                  <td>Mechanical Keyboard (TKL)</td>
+                  <td>Peripherals</td>
+                  <td>$59.00</td>
+                  <td>4</td>
+                  <td><span class="tag warn">Low</span></td>
+                  <td>
+                    <a href="./inventory.html">Edit</a> · <a href="./inventory.html">Quick restock</a>
+                  </td>
+                </tr>
+                <tr>
+                  <td>SI-HS11</td>
+                  <td>Noise-Cancel Headset</td>
+                  <td>Audio</td>
+                  <td>$129.00</td>
+                  <td>0</td>
+                  <td><span class="tag bad">Out</span></td>
+                  <td>
+                    <a href="./inventory.html">Edit</a> · <a href="./inventory.html">Archive</a>
+                  </td>
+                </tr>
+                <tr>
+                  <td>SI-CM44</td>
+                  <td>USB Webcam (1080p)</td>
+                  <td>Video</td>
+                  <td>$39.50</td>
+                  <td>62</td>
+                  <td><span class="tag ok">In stock</span></td>
+                  <td><a href="./inventory.html">Edit</a> · <a href="./inventory.html">Archive</a></td>
+                </tr>
+                <tr>
+                  <td>SI-CK02</td>
+                  <td>USB‑C Cable (2m)</td>
+                  <td>Accessories</td>
+                  <td>$8.99</td>
+                  <td>8</td>
+                  <td><span class="tag warn">Low</span></td>
+                  <td>
+                    <a href="./inventory.html">Edit</a> · <a href="./inventory.html">Quick restock</a>
+                  </td>
+                </tr>
+                <tr>
+                  <td>SI-ST15</td>
+                  <td>Laptop Stand (Aluminum)</td>
+                  <td>Workspace</td>
+                  <td>$29.99</td>
+                  <td>18</td>
+                  <td><span class="tag ok">In stock</span></td>
+                  <td><a href="./inventory.html">Edit</a> · <a href="./inventory.html">Archive</a></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="hint" style="margin: 12px 0 0">
+            Tip: Use this page as a static mock for UI screenshots or demos.
+          </p>
+        </div>
+      </section>
+
+      <footer class="footer">Inventory page (static). No JavaScript on this page.</footer>
+    </main>
+  </body>
+</html>
+

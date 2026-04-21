@@ -1,4 +1,5 @@
 from collections import defaultdict
+from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 from sqlalchemy import func, or_, select
@@ -404,10 +405,19 @@ def get_dashboard_overview(db: Session, user: User) -> dict:
         )
     top_listings.sort(key=lambda item: (item["revenue"], item["units_sold"]), reverse=True)
 
-    revenue_trend = [
-        {"day": day, "revenue": round(float(data["revenue"]), 2), "units": int(data["units"])}
-        for day, data in sorted(trend_map.items())[-14:]
-    ]
+    revenue_window_days = 365
+    revenue_window_start = date.today() - timedelta(days=revenue_window_days - 1)
+    revenue_trend = []
+    for offset in range(revenue_window_days):
+        current_day = (revenue_window_start + timedelta(days=offset)).isoformat()
+        data = trend_map.get(current_day, {"revenue": 0.0, "units": 0})
+        revenue_trend.append(
+            {
+                "day": current_day,
+                "revenue": round(float(data["revenue"]), 2),
+                "units": int(data["units"]),
+            }
+        )
 
     marketplace_mix = [
         {
