@@ -1,0 +1,24 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "experimentalServices": {
+    "web": {
+      "entrypoint": "frontend",
+      "routePrefix": "/"
+    },
+    "api": {
+      "entrypoint": "backend/main.py",
+      "routePrefix": "/api",
+      "includeFiles": [
+        "backend/**"
+      ]
+    },
+    "agentApi": {
+      "entrypoint": "backend/agent_api.py",
+      "routePrefix": "/agent-api",
+      "includeFiles": [
+        "backend/**",
+        "azure_tools_api/**"
+      ]
+    }
+  }
+}

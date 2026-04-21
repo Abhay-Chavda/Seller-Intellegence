@@ -8,6 +8,7 @@ from app import crud, models, schemas
 from app.core.config import get_settings
 from app.core.security import create_access_token, decode_access_token, verify_password
 from app.db import Base, engine, get_db
+from app.db_schema import ensure_user_profile_columns, seed_admin_user
 
 app = FastAPI(title="Seller Intelligence API", version="0.1.0")
 settings = get_settings()
@@ -22,6 +23,16 @@ app.add_middleware(
 )
 
 Base.metadata.create_all(bind=engine)
+ensure_user_profile_columns(
+    engine=engine,
+    schema=None if str(engine.url).startswith("sqlite") else Base.metadata.schema,
+)
+seed_admin_user(
+    engine=engine,
+    schema=None if str(engine.url).startswith("sqlite") else Base.metadata.schema,
+    email="admin@local.com",
+    password="adminpassword123",
+)
 
 
 def get_current_user(
@@ -42,6 +53,15 @@ def get_current_user(
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
     return user
+
+
+def get_admin_user(current_user: models.User = Depends(get_current_user)) -> models.User:
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+    return current_user
 
 
 @app.get("/health")
@@ -94,6 +114,38 @@ def dashboard_overview(
     current_user: models.User = Depends(get_current_user),
 ):
     return crud.get_dashboard_overview(db, user=current_user)
+
+
+@app.get("/admin/summary", response_model=schemas.AdminSummary)
+def admin_summary(
+    db: Session = Depends(get_db),
+    _: models.User = Depends(get_admin_user),
+):
+    return crud.get_admin_summary(db)
+
+
+@app.get("/admin/users", response_model=list[schemas.AdminUserUsage])
+def admin_users(
+    db: Session = Depends(get_db),
+    _: models.User = Depends(get_admin_user),
+):
+    return crud.get_admin_user_usage(db)
+
+
+@app.get("/admin/subscriptions", response_model=list[schemas.AdminSubscriptionStat])
+def admin_subscriptions(
+    db: Session = Depends(get_db),
+    _: models.User = Depends(get_admin_user),
+):
+    return crud.get_admin_subscription_stats(db)
+
+
+@app.get("/admin/agents/usage", response_model=list[schemas.AdminAgentUsage])
+def admin_agents_usage(
+    db: Session = Depends(get_db),
+    _: models.User = Depends(get_admin_user),
+):
+    return crud.get_admin_agent_usage(db)
 
 
 @app.get("/products", response_model=list[schemas.ProductOut])

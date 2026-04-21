@@ -1,0 +1,18 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="sellerintel-bg" x1="16" y1="12" x2="112" y2="116" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7C82FF"/>
+      <stop offset="1" stop-color="#3DD9FF"/>
+    </linearGradient>
+    <linearGradient id="sellerintel-bar" x1="38" y1="34" x2="87" y2="95" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0F172A"/>
+      <stop offset="1" stop-color="#1E293B"/>
+    </linearGradient>
+  </defs>
+  <rect x="10" y="10" width="108" height="108" rx="28" fill="url(#sellerintel-bg)"/>
+  <rect x="24" y="24" width="80" height="80" rx="18" fill="#FFFFFF" fill-opacity="0.88"/>
+  <rect x="36" y="70" width="12" height="20" rx="4" fill="url(#sellerintel-bar)"/>
+  <rect x="58" y="50" width="12" height="40" rx="4" fill="url(#sellerintel-bar)"/>
+  <rect x="80" y="38" width="12" height="52" rx="4" fill="url(#sellerintel-bar)"/>
+  <path d="M34 96H94" stroke="#CBD5E1" stroke-width="6" stroke-linecap="round"/>
+</svg>

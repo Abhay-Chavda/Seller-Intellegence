@@ -25,11 +25,33 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(120))
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     hashed_password: Mapped[str] = mapped_column(String(255))
+    role: Mapped[str] = mapped_column(String(50), default="user")
+    subscription_type: Mapped[str] = mapped_column(String(50), default="Demo")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     products: Mapped[list["Product"]] = relationship(back_populates="seller")
     orders: Mapped[list["Order"]] = relationship(back_populates="seller")
+
+
+class AzureAgentRecord(Base):
+    __tablename__ = "azure_agent_records"
+    __table_args__ = (UniqueConstraint("seller_id", name="uq_azure_agent_records_seller_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    seller_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    agent_id: Mapped[str] = mapped_column(String(255), index=True)
+    agent_name: Mapped[str] = mapped_column(String(255), index=True)
+    agent_version: Mapped[str] = mapped_column(String(80))
+    project_endpoint: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    agent_key: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    instructions: Mapped[str] = mapped_column(String(4000))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
 
 
 class Product(Base):

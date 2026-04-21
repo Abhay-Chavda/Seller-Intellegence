@@ -18,6 +18,8 @@ class UserOut(BaseModel):
     id: int
     name: str
     email: str
+    role: str
+    subscription_type: str
 
     class Config:
         from_attributes = True
@@ -154,3 +156,50 @@ class DashboardOverview(BaseModel):
     recent_sales: list[DashboardRecentSale]
     listing_status: list[DashboardCategoryCount]
     inventory_bands: list[DashboardCategoryCount]
+
+
+class AdminSummary(BaseModel):
+    total_users: int
+    admin_users: int
+    demo_subscriptions: int
+    users_with_agents: int
+    total_orders: int
+    total_products: int
+    total_sales: float
+
+
+class AdminSubscriptionStat(BaseModel):
+    subscription_type: str
+    users_count: int
+
+
+class AdminUserUsage(BaseModel):
+    id: int
+    name: str
+    email: str
+    role: str
+    subscription_type: str
+    created_at: datetime
+    products_count: int
+    orders_count: int
+    total_sales: float
+    last_order_at: datetime | None
+    last_product_update_at: datetime | None
+    agent_name: str | None
+    agent_version: str | None
+    project_endpoint: str | None
+    agent_updated_at: datetime | None
+
+
+class AdminAgentUsage(BaseModel):
+    seller_id: int
+    seller_name: str
+    seller_email: str
+    subscription_type: str
+    agent_name: str
+    agent_version: str
+    project_endpoint: str | None
+    agent_updated_at: datetime
+    orders_count: int
+    products_count: int
+    total_sales: float

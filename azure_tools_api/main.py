@@ -2,27 +2,58 @@ import os
 import sys
 from pathlib import Path
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
-BACKEND_DIR = ROOT_DIR / "backend"
+THIS_FILE = Path(__file__).resolve()
+SEARCH_ROOTS = [
+    THIS_FILE.parent,
+    THIS_FILE.parent.parent,
+    THIS_FILE.parent.parent.parent,
+]
+
+BACKEND_DIR = None
+for root in SEARCH_ROOTS:
+    if (root / "app").exists():
+        BACKEND_DIR = root
+        break
+    candidate = root / "backend"
+    if candidate.exists():
+        BACKEND_DIR = candidate
+        break
+
+if BACKEND_DIR is None:
+    BACKEND_DIR = THIS_FILE.parent / "backend"
+
+ROOT_DIR = BACKEND_DIR.parent
+LOCAL_ENV_FILE = ROOT_DIR / "azure_tools_api" / ".env"
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
+
+try:
+    from dotenv import load_dotenv
+except Exception:
+    load_dotenv = None
+
+if load_dotenv and LOCAL_ENV_FILE.exists():
+    load_dotenv(LOCAL_ENV_FILE, override=False)
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import ValidationError
+from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 
 from app import crud, models, schemas as core_schemas
 from app.core.config import get_settings
 from app.core.security import create_access_token, decode_access_token, verify_password
 from app.db import Base, engine, get_db
+from app.db_schema import ensure_user_profile_columns, seed_admin_user
 
 from azure_tools_api import agent_models as _agent_models  # noqa: F401
 from azure_tools_api.agent_service import (
     build_agent_openapi_spec,
     create_or_update_agent,
+    delete_agent_record,
     get_agent_record,
     get_agent_record_by_key,
     run_agent_chat,
@@ -33,6 +64,7 @@ from azure_tools_api.schemas import (
     AgentChatResponse,
     AgentCreateRequest,
     AgentCreateResponse,
+    AgentDeleteResponse,
     ArchiveProductResult,
     ArchiveProductToolArgs,
     CurrentAgentResponse,
@@ -66,10 +98,38 @@ app.add_middleware(
 )
 
 Base.metadata.create_all(bind=engine)
+ensure_user_profile_columns(
+    engine=engine,
+    schema=None if str(engine.url).startswith("sqlite") else Base.metadata.schema,
+)
+seed_admin_user(
+    engine=engine,
+    schema=None if str(engine.url).startswith("sqlite") else Base.metadata.schema,
+    email="admin@local.com",
+    password="adminpassword123",
+)
+
+
+def ensure_agent_record_columns() -> None:
+    inspector = inspect(engine)
+    schema = None if str(engine.url).startswith("sqlite") else Base.metadata.schema
+    columns = {column["name"] for column in inspector.get_columns("azure_agent_records", schema=schema)}
+    if "project_endpoint" in columns:
+        return
+
+    qualified_table = "azure_agent_records"
+    if schema:
+        qualified_table = f"{schema}.azure_agent_records"
+
+    with engine.begin() as connection:
+        connection.execute(text(f"ALTER TABLE {qualified_table} ADD COLUMN project_endpoint VARCHAR(500)"))
+
+
+ensure_agent_record_columns()
 
 
 def get_public_base_url(request: Request) -> str:
-    configured = os.getenv("PUBLIC_BASE_URL", "").strip()
+    configured = os.getenv("PUBLIC_BASE_URL", "").strip().strip('"').strip("'")
     if configured:
         return configured.rstrip("/")
     return str(request.base_url).rstrip("/")
@@ -153,6 +213,7 @@ def root():
               <li><code>GET /auth/me</code></li>
               <li><code>GET /agent/current</code></li>
               <li><code>POST /agent/create</code></li>
+              <li><code>DELETE /agent/current</code></li>
               <li><code>POST /agent/chat</code></li>
               <li><code>POST /agent/chat/reset</code></li>
             </ul>
@@ -226,12 +287,28 @@ def create_agent(
             user=current_user,
             base_url=get_public_base_url(request),
             custom_instructions=payload.instructions,
+            existing_agent_id=payload.existing_agent_id,
+            project_endpoint=payload.project_endpoint,
+            model_deployment_name=payload.model_deployment_name,
+            agent_name_override=payload.agent_name,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     AGENT_CHAT_HISTORY.pop(current_user.id, None)
     return AgentCreateResponse(created=created, agent=record)
+
+
+@app.delete("/agent/current", response_model=AgentDeleteResponse)
+def delete_current_agent(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    deleted = delete_agent_record(db, seller_id=current_user.id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not created for this user")
+    AGENT_CHAT_HISTORY.pop(current_user.id, None)
+    return AgentDeleteResponse(deleted=True)
 
 
 @app.post("/agent/chat", response_model=AgentChatResponse)

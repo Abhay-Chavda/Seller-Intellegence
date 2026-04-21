@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.security import hash_password
-from app.models import Order, OrderItem, Product, User
+from app.models import AzureAgentRecord, Order, OrderItem, Product, User
 from app.schemas import OrderCreate, ProductCreate, ProductUpdate, UserCreate
 
 
@@ -16,6 +16,8 @@ def create_user(db: Session, payload: UserCreate) -> User:
         name=payload.name,
         email=normalized_email,
         hashed_password=hash_password(payload.password),
+        role="user",
+        subscription_type="Demo",
     )
     db.add(user)
     db.commit()
@@ -26,6 +28,165 @@ def create_user(db: Session, payload: UserCreate) -> User:
 def get_user_by_email(db: Session, email: str) -> User | None:
     normalized_email = email.strip().lower()
     return db.scalar(select(User).where(User.email == normalized_email))
+
+
+def get_admin_summary(db: Session) -> dict:
+    total_users = db.scalar(select(func.count()).select_from(User)) or 0
+    admin_users = db.scalar(
+        select(func.count()).select_from(User).where(User.role == "admin")
+    ) or 0
+    demo_subscriptions = db.scalar(
+        select(func.count()).select_from(User).where(User.subscription_type == "Demo")
+    ) or 0
+    users_with_agents = db.scalar(select(func.count()).select_from(AzureAgentRecord)) or 0
+    total_orders = db.scalar(select(func.count()).select_from(Order)) or 0
+    total_products = db.scalar(
+        select(func.count()).select_from(Product).where(Product.is_active.is_(True))
+    ) or 0
+    total_sales = db.scalar(select(func.sum(Order.total_amount)).select_from(Order)) or 0.0
+
+    return {
+        "total_users": int(total_users),
+        "admin_users": int(admin_users),
+        "demo_subscriptions": int(demo_subscriptions),
+        "users_with_agents": int(users_with_agents),
+        "total_orders": int(total_orders),
+        "total_products": int(total_products),
+        "total_sales": round(float(total_sales), 2),
+    }
+
+
+def get_admin_subscription_stats(db: Session) -> list[dict]:
+    rows = db.execute(
+        select(
+            User.subscription_type,
+            func.count(User.id).label("users_count"),
+        )
+        .group_by(User.subscription_type)
+        .order_by(User.subscription_type.asc())
+    ).all()
+
+    return [
+        {
+            "subscription_type": subscription_type or "Unknown",
+            "users_count": int(users_count),
+        }
+        for subscription_type, users_count in rows
+    ]
+
+
+def get_admin_user_usage(db: Session) -> list[dict]:
+    product_stats = (
+        select(
+            Product.seller_id.label("seller_id"),
+            func.count(Product.id).label("products_count"),
+            func.max(Product.updated_at).label("last_product_update_at"),
+        )
+        .where(Product.is_active.is_(True))
+        .group_by(Product.seller_id)
+        .subquery()
+    )
+
+    order_stats = (
+        select(
+            Order.seller_id.label("seller_id"),
+            func.count(Order.id).label("orders_count"),
+            func.coalesce(func.sum(Order.total_amount), 0).label("total_sales"),
+            func.max(Order.created_at).label("last_order_at"),
+        )
+        .group_by(Order.seller_id)
+        .subquery()
+    )
+
+    stmt = (
+        select(
+            User.id,
+            User.name,
+            User.email,
+            User.role,
+            User.subscription_type,
+            User.created_at,
+            func.coalesce(product_stats.c.products_count, 0).label("products_count"),
+            func.coalesce(order_stats.c.orders_count, 0).label("orders_count"),
+            func.coalesce(order_stats.c.total_sales, 0).label("total_sales"),
+            order_stats.c.last_order_at,
+            product_stats.c.last_product_update_at,
+            AzureAgentRecord.agent_name,
+            AzureAgentRecord.agent_version,
+            AzureAgentRecord.project_endpoint,
+            AzureAgentRecord.updated_at.label("agent_updated_at"),
+        )
+        .select_from(User)
+        .outerjoin(product_stats, product_stats.c.seller_id == User.id)
+        .outerjoin(order_stats, order_stats.c.seller_id == User.id)
+        .outerjoin(AzureAgentRecord, AzureAgentRecord.seller_id == User.id)
+        .order_by(User.created_at.desc(), User.id.desc())
+    )
+
+    rows = db.execute(stmt).mappings().all()
+    return [
+        {
+            **dict(row),
+            "products_count": int(row["products_count"] or 0),
+            "orders_count": int(row["orders_count"] or 0),
+            "total_sales": round(float(row["total_sales"] or 0), 2),
+        }
+        for row in rows
+    ]
+
+
+def get_admin_agent_usage(db: Session) -> list[dict]:
+    product_stats = (
+        select(
+            Product.seller_id.label("seller_id"),
+            func.count(Product.id).label("products_count"),
+        )
+        .where(Product.is_active.is_(True))
+        .group_by(Product.seller_id)
+        .subquery()
+    )
+
+    order_stats = (
+        select(
+            Order.seller_id.label("seller_id"),
+            func.count(Order.id).label("orders_count"),
+            func.coalesce(func.sum(Order.total_amount), 0).label("total_sales"),
+        )
+        .group_by(Order.seller_id)
+        .subquery()
+    )
+
+    stmt = (
+        select(
+            User.id.label("seller_id"),
+            User.name.label("seller_name"),
+            User.email.label("seller_email"),
+            User.subscription_type,
+            AzureAgentRecord.agent_name,
+            AzureAgentRecord.agent_version,
+            AzureAgentRecord.project_endpoint,
+            AzureAgentRecord.updated_at.label("agent_updated_at"),
+            func.coalesce(order_stats.c.orders_count, 0).label("orders_count"),
+            func.coalesce(product_stats.c.products_count, 0).label("products_count"),
+            func.coalesce(order_stats.c.total_sales, 0).label("total_sales"),
+        )
+        .select_from(AzureAgentRecord)
+        .join(User, User.id == AzureAgentRecord.seller_id)
+        .outerjoin(product_stats, product_stats.c.seller_id == User.id)
+        .outerjoin(order_stats, order_stats.c.seller_id == User.id)
+        .order_by(AzureAgentRecord.updated_at.desc(), User.id.desc())
+    )
+
+    rows = db.execute(stmt).mappings().all()
+    return [
+        {
+            **dict(row),
+            "orders_count": int(row["orders_count"] or 0),
+            "products_count": int(row["products_count"] or 0),
+            "total_sales": round(float(row["total_sales"] or 0), 2),
+        }
+        for row in rows
+    ]
 
 
 def create_product(db: Session, seller_id: int, payload: ProductCreate) -> Product:

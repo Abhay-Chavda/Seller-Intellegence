@@ -1,6 +1,14 @@
-import { FormEvent, useEffect, useState, useMemo } from "react";
+import { FormEvent, ReactNode, useEffect, useState, useMemo } from "react";
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell, Legend } from 'recharts';
 import {
+  AdminAgentUsage,
+  AdminSubscriptionStat,
+  AdminSummary,
+  AdminUserUsage,
+  Agent,
+  AgentChatMessage,
+  AgentCreatePayload,
+  ApiError,
   api,
   DashboardOverview,
   DashboardRevenuePoint,
@@ -9,15 +17,24 @@ import {
   User,
 } from "./api";
 
-type AuthMode = "login" | "signup";
-type DashboardPage = "overview" | "inventory" | "orders";
-type NoticeTone = "error" | "success";
+const viteEnv = (import.meta as ImportMeta & {
+  env?: Record<string, string | undefined>;
+}).env || {};
 
-const dashboardPages: Array<{ id: DashboardPage; label: string; icon: string }> = [
+type AuthMode = "login" | "signup";
+type DashboardPage = "overview" | "inventory" | "orders" | "agents" | "admin";
+type NoticeTone = "error" | "success";
+type ThemeMode = "dark" | "light";
+const AGENTS_ENABLED = viteEnv.VITE_ENABLE_AGENTS === "true" || Boolean(viteEnv.DEV);
+
+const dashboardPages: Array<{ id: Exclude<DashboardPage, "admin">; label: string; icon: string }> = [
   { id: "overview", label: "Dashboard", icon: "📊" },
   { id: "inventory", label: "Inventory", icon: "📦" },
   { id: "orders", label: "Orders", icon: "🛍️" },
+  { id: "agents", label: "Agents", icon: "🤖" },
 ];
+
+const adminDashboardPage = { id: "admin" as const, label: "Admin", icon: "🛠️" };
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
@@ -58,12 +75,80 @@ function getGeneratedOrderNumber(): string {
   return `ORD-${Date.now().toString().slice(-8)}`;
 }
 
+function renderInlineAgentText(text: string): ReactNode[] {
+  return text.split(/(\*\*.*?\*\*)/g).filter(Boolean).map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
+      return <strong key={`bold-${index}`}>{part.slice(2, -2)}</strong>;
+    }
+    return <span key={`text-${index}`}>{part}</span>;
+  });
+}
+
+function renderAgentContent(content: string): ReactNode[] {
+  const lines = content.split("\n");
+  const blocks: ReactNode[] = [];
+  let paragraphLines: string[] = [];
+  let listItems: string[] = [];
+
+  const flushParagraph = () => {
+    if (paragraphLines.length === 0) return;
+    blocks.push(
+      <p key={`paragraph-${blocks.length}`}>
+        {renderInlineAgentText(paragraphLines.join(" "))}
+      </p>
+    );
+    paragraphLines = [];
+  };
+
+  const flushList = () => {
+    if (listItems.length === 0) return;
+    blocks.push(
+      <ul key={`list-${blocks.length}`}>
+        {listItems.map((item, index) => (
+          <li key={`item-${index}`}>{renderInlineAgentText(item)}</li>
+        ))}
+      </ul>
+    );
+    listItems = [];
+  };
+
+  lines.forEach((rawLine) => {
+    const line = rawLine.trim();
+
+    if (!line) {
+      flushParagraph();
+      flushList();
+      return;
+    }
+
+    const bulletMatch = line.match(/^[-*]\s+(.*)$/);
+    if (bulletMatch) {
+      flushParagraph();
+      listItems.push(bulletMatch[1]);
+      return;
+    }
+
+    flushList();
+    paragraphLines.push(line);
+  });
+
+  flushParagraph();
+  flushList();
+
+  return blocks;
+}
+
 export default function App() {
   const [token, setToken] = useState<string>(() => localStorage.getItem("token") || "");
+  const [theme, setTheme] = useState<ThemeMode>(() => {
+    const saved = localStorage.getItem("theme");
+    return saved === "light" ? "light" : "dark";
+  });
   const [mode, setMode] = useState<AuthMode>("login");
   const [page, setPage] = useState<DashboardPage>("overview");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [name, setName] = useState("");
   const [user, setUser] = useState<User | null>(null);
   const [overview, setOverview] = useState<DashboardOverview | null>(null);
@@ -80,6 +165,23 @@ export default function App() {
   const [dashboardDays, setDashboardDays] = useState(14);
   const [ordersFrom, setOrdersFrom] = useState("");
   const [ordersTo, setOrdersTo] = useState("");
+  const [currentAgent, setCurrentAgent] = useState<Agent | null>(null);
+  const [agentHistory, setAgentHistory] = useState<AgentChatMessage[]>([]);
+  const [agentPrompt, setAgentPrompt] = useState("");
+  const [agentBusy, setAgentBusy] = useState(false);
+  const [agentChatBusy, setAgentChatBusy] = useState(false);
+  const [adminLoading, setAdminLoading] = useState(false);
+  const [adminSummary, setAdminSummary] = useState<AdminSummary | null>(null);
+  const [adminUsers, setAdminUsers] = useState<AdminUserUsage[]>([]);
+  const [adminSubscriptions, setAdminSubscriptions] = useState<AdminSubscriptionStat[]>([]);
+  const [adminAgentUsage, setAdminAgentUsage] = useState<AdminAgentUsage[]>([]);
+  const [agentForm, setAgentForm] = useState<AgentCreatePayload>({
+    agent_name: "",
+    instructions: "",
+    existing_agent_id: "",
+    project_endpoint: "",
+    model_deployment_name: "",
+  });
   const [newProduct, setNewProduct] = useState<Omit<Product, "id" | "seller_id">>({
     title: "",
     sku: "",
@@ -95,6 +197,57 @@ export default function App() {
     unit_price: 0,
   });
 
+  function handleUnauthorizedError(err: unknown): boolean {
+    if (
+      err instanceof ApiError &&
+      err.status === 401
+    ) {
+      handleLogout();
+      setMessage("Session expired. Please sign in again.");
+      setMessageTone("error");
+      return true;
+    }
+    return false;
+  }
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("theme", theme);
+  }, [theme]);
+
+  function toggleTheme() {
+    setTheme(current => current === "dark" ? "light" : "dark");
+  }
+
+  function resetAuthForm() {
+    setName("");
+    setEmail("");
+    setPassword("");
+    setShowPassword(false);
+  }
+
+  function handleAuthModeSwitch() {
+    setMode(mode === "login" ? "signup" : "login");
+    resetAuthForm();
+    setMessage("");
+  }
+
+  function handleLogout() {
+    localStorage.removeItem("token");
+    setToken("");
+    setUser(null);
+    setOverview(null);
+    setCurrentAgent(null);
+    setAgentHistory([]);
+    setAdminSummary(null);
+    setAdminUsers([]);
+    setAdminSubscriptions([]);
+    setAdminAgentUsage([]);
+    setMode("login");
+    resetAuthForm();
+    setMessage("");
+  }
+
   async function onCreateProduct(e: FormEvent) {
     e.preventDefault();
     setLoading(true);
@@ -104,7 +257,7 @@ export default function App() {
       setMessageTone("success");
       setIsAddingProduct(false);
       setNewProduct({ title: "", sku: "", sell_price: 0, stock: 0, marketplace: "Amazon" });
-      refreshData(token);
+      await refreshData(token);
     } catch (err) {
       setMessage("Failed to create listing.");
       setMessageTone("error");
@@ -128,7 +281,7 @@ export default function App() {
       setMessage("Product updated successfully.");
       setMessageTone("success");
       setEditingProduct(null);
-      refreshData(token);
+      await refreshData(token);
     } catch (err) {
       setMessage("Failed to update product.");
       setMessageTone("error");
@@ -144,7 +297,7 @@ export default function App() {
       await api.deleteProduct(token, id);
       setMessage("Product deleted.");
       setMessageTone("success");
-      refreshData(token);
+      await refreshData(token);
     } catch (err) {
       setMessage("Failed to delete product.");
       setMessageTone("error");
@@ -161,7 +314,7 @@ export default function App() {
       });
       setMessage(`Restocked ${product.sku} by +${QUICK_RESTOCK_UNITS} units.`);
       setMessageTone("success");
-      refreshData(token);
+      await refreshData(token);
     } catch (err) {
       setMessage("Quick restock failed.");
       setMessageTone("error");
@@ -188,6 +341,17 @@ export default function App() {
     setIsAddingOrder(true);
   }
 
+  function onOpenCreateProductModal() {
+    setNewProduct({
+      title: "",
+      sku: "",
+      sell_price: 0,
+      stock: 0,
+      marketplace: "Amazon",
+    });
+    setIsAddingProduct(true);
+  }
+
   async function onCreateOrder(e: FormEvent) {
     e.preventDefault();
     if (!newOrder.product_id) {
@@ -212,7 +376,7 @@ export default function App() {
       setMessage("Order created successfully.");
       setMessageTone("success");
       setIsAddingOrder(false);
-      refreshData(token);
+      await refreshData(token);
     } catch (err) {
       setMessage("Failed to create order.");
       setMessageTone("error");
@@ -224,11 +388,41 @@ export default function App() {
   useEffect(() => {
     if (!token) {
       localStorage.removeItem("token");
+      setCurrentAgent(null);
+      setAgentHistory([]);
       return;
     }
     localStorage.setItem("token", token);
     refreshData(token);
+    if (AGENTS_ENABLED) {
+      refreshAgentData(token, true);
+    }
   }, [token]);
+
+  useEffect(() => {
+    if (AGENTS_ENABLED && token && page === "agents") {
+      refreshAgentData(token, true);
+    }
+  }, [page, token]);
+
+  useEffect(() => {
+    if (!AGENTS_ENABLED && page === "agents") {
+      setPage("overview");
+      return;
+    }
+    if (user?.role !== "admin" && page === "admin") {
+      setPage("overview");
+    }
+    if (user?.role === "admin" && page !== "admin") {
+      setPage("admin");
+    }
+  }, [page, user?.role]);
+
+  useEffect(() => {
+    if (token && user?.role === "admin" && page === "admin") {
+      refreshAdminData(token, true);
+    }
+  }, [page, token, user?.role]);
 
   async function refreshData(activeToken: string) {
     try {
@@ -243,7 +437,53 @@ export default function App() {
       setProducts(pr);
       setOrders(ord);
     } catch (err) {
-      setToken("");
+      handleLogout();
+    }
+  }
+
+  async function refreshAgentData(activeToken: string, silent = false) {
+    try {
+      const response = await api.getCurrentAgent(activeToken);
+      setCurrentAgent(response.agent);
+      if (response.agent) {
+        setAgentForm(prev => ({
+          ...prev,
+          agent_name: response.agent?.agent_name || "",
+          instructions: response.agent?.instructions || "",
+          project_endpoint: response.agent?.project_endpoint || prev.project_endpoint || "",
+        }));
+      }
+    } catch (err) {
+      if (handleUnauthorizedError(err)) return;
+      setCurrentAgent(null);
+      if (!silent) {
+        setMessage(err instanceof Error ? err.message : "Agent service is not available.");
+        setMessageTone("error");
+      }
+    }
+  }
+
+  async function refreshAdminData(activeToken: string, silent = false) {
+    setAdminLoading(true);
+    try {
+      const [summary, usersResponse, subscriptions, agentUsage] = await Promise.all([
+        api.getAdminSummary(activeToken),
+        api.getAdminUsers(activeToken),
+        api.getAdminSubscriptions(activeToken),
+        api.getAdminAgentUsage(activeToken),
+      ]);
+      setAdminSummary(summary);
+      setAdminUsers(usersResponse);
+      setAdminSubscriptions(subscriptions);
+      setAdminAgentUsage(agentUsage);
+    } catch (err) {
+      if (handleUnauthorizedError(err)) return;
+      if (!silent) {
+        setMessage(err instanceof Error ? err.message : "Admin data is not available.");
+        setMessageTone("error");
+      }
+    } finally {
+      setAdminLoading(false);
     }
   }
 
@@ -255,11 +495,101 @@ export default function App() {
       if (mode === "signup") await api.signup(name, email, password);
       const auth = await api.login(email, password);
       setToken(auth.access_token);
+      resetAuthForm();
     } catch (err) {
       setMessage("Authentication failed. Check your email or password.");
       setMessageTone("error");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function onCreateAgent(e: FormEvent) {
+    e.preventDefault();
+    setAgentBusy(true);
+    try {
+      const payload: AgentCreatePayload = {
+        agent_name: agentForm.agent_name.trim(),
+        instructions: agentForm.instructions?.trim() || undefined,
+        existing_agent_id: agentForm.existing_agent_id?.trim() || undefined,
+        project_endpoint: agentForm.project_endpoint?.trim() || undefined,
+        model_deployment_name: agentForm.model_deployment_name?.trim() || undefined,
+      };
+      const response = await api.createAgent(token, payload);
+      setCurrentAgent(response.agent);
+      setAgentHistory([]);
+      setMessage(response.created ? "Agent created successfully." : "Agent updated successfully.");
+      setMessageTone("success");
+    } catch (err) {
+      if (handleUnauthorizedError(err)) return;
+      setMessage(err instanceof Error ? err.message : "Failed to create agent.");
+      setMessageTone("error");
+    } finally {
+      setAgentBusy(false);
+    }
+  }
+
+  async function onDeleteAgent() {
+    if (!currentAgent) return;
+    if (!confirm(`Delete the saved agent "${currentAgent.agent_name}" from this app?`)) return;
+
+    setAgentBusy(true);
+    try {
+      await api.deleteAgent(token);
+      setCurrentAgent(null);
+      setAgentHistory([]);
+      setAgentPrompt("");
+      setAgentForm(prev => ({
+        ...prev,
+        existing_agent_id: "",
+        instructions: "",
+      }));
+      setMessage("Agent deleted from the app.");
+      setMessageTone("success");
+    } catch (err) {
+      if (handleUnauthorizedError(err)) return;
+      setMessage(err instanceof Error ? err.message : "Failed to delete agent.");
+      setMessageTone("error");
+    } finally {
+      setAgentBusy(false);
+    }
+  }
+
+  async function onResetAgentChat() {
+    setAgentChatBusy(true);
+    try {
+      await api.resetAgentChat(token);
+      setAgentHistory([]);
+      setAgentPrompt("");
+      setMessage("Agent chat cleared.");
+      setMessageTone("success");
+    } catch (err) {
+      if (handleUnauthorizedError(err)) return;
+      setMessage(err instanceof Error ? err.message : "Failed to clear agent chat.");
+      setMessageTone("error");
+    } finally {
+      setAgentChatBusy(false);
+    }
+  }
+
+  async function onSendAgentPrompt(e: FormEvent) {
+    e.preventDefault();
+    if (!currentAgent || !agentPrompt.trim()) return;
+
+    setAgentChatBusy(true);
+    try {
+      const response = await api.chatWithAgent(token, {
+        prompt: agentPrompt.trim(),
+        history: agentHistory,
+      });
+      setAgentHistory(response.history);
+      setAgentPrompt("");
+    } catch (err) {
+      if (handleUnauthorizedError(err)) return;
+      setMessage(err instanceof Error ? err.message : "Agent chat failed.");
+      setMessageTone("error");
+    } finally {
+      setAgentChatBusy(false);
     }
   }
 
@@ -325,6 +655,37 @@ export default function App() {
     );
   }, [products, searchQuery]);
 
+  const visibleDashboardPages = useMemo(
+    () =>
+      user?.role === "admin"
+        ? [adminDashboardPage]
+        : dashboardPages.filter(pageItem => AGENTS_ENABLED || pageItem.id !== "agents"),
+    [user?.role]
+  );
+
+  const filteredAdminUsers = useMemo(() => {
+    if (!searchQuery) return adminUsers;
+    const query = searchQuery.toLowerCase();
+    return adminUsers.filter(entry =>
+      entry.name.toLowerCase().includes(query) ||
+      entry.email.toLowerCase().includes(query) ||
+      entry.role.toLowerCase().includes(query) ||
+      entry.subscription_type.toLowerCase().includes(query) ||
+      (entry.agent_name || "").toLowerCase().includes(query)
+    );
+  }, [adminUsers, searchQuery]);
+
+  const filteredAdminAgents = useMemo(() => {
+    if (!searchQuery) return adminAgentUsage;
+    const query = searchQuery.toLowerCase();
+    return adminAgentUsage.filter(entry =>
+      entry.seller_name.toLowerCase().includes(query) ||
+      entry.seller_email.toLowerCase().includes(query) ||
+      entry.agent_name.toLowerCase().includes(query) ||
+      entry.subscription_type.toLowerCase().includes(query)
+    );
+  }, [adminAgentUsage, searchQuery]);
+
   const selectedOrderProduct = useMemo(
     () => products.find(p => p.id === newOrder.product_id) || null,
     [products, newOrder.product_id]
@@ -334,6 +695,12 @@ export default function App() {
     return (
       <div className="auth-shell">
         <div className="auth-card">
+          <div className="theme-toggle-row">
+            <button type="button" className="theme-toggle-btn" onClick={toggleTheme}>
+              <span>{theme === "dark" ? "☀️" : "🌙"}</span>
+              <span>{theme === "dark" ? "Light Theme" : "Dark Theme"}</span>
+            </button>
+          </div>
           <h1>{mode === "login" ? "Welcome Back" : "Get Started"}</h1>
           <p>
             {mode === "login" 
@@ -369,14 +736,23 @@ export default function App() {
             
             <div className="input-group">
               <span className="input-label">Password</span>
-              <input 
-                className="auth-input" 
-                placeholder="Enter your secure password" 
-                type="password" 
-                value={password} 
-                onChange={e => setPassword(e.target.value)} 
-                required 
-              />
+              <div className="auth-password-wrap">
+                <input 
+                  className="auth-input password-input" 
+                  placeholder="Enter your secure password" 
+                  type={showPassword ? "text" : "password"} 
+                  value={password} 
+                  onChange={e => setPassword(e.target.value)} 
+                  required 
+                />
+                <button
+                  type="button"
+                  className="password-toggle-btn"
+                  onClick={() => setShowPassword(current => !current)}
+                >
+                  {showPassword ? "Hide" : "Show"}
+                </button>
+              </div>
             </div>
             
             <button className="auth-btn" disabled={loading}>
@@ -386,7 +762,7 @@ export default function App() {
           
           <div className="auth-switch">
             {mode === "login" ? "Don't have an account?" : "Already have an account?"}
-            <button className="auth-switch-btn" onClick={() => setMode(mode === "login" ? "signup" : "login")}>
+            <button className="auth-switch-btn" onClick={handleAuthModeSwitch}>
               {mode === "login" ? "Sign Up" : "Back to Login"}
             </button>
           </div>
@@ -405,9 +781,12 @@ export default function App() {
     <div className="app-container">
       <header className="top-navbar">
         <div className="top-navbar-left">
-          <h1 className="brand-title">SellerIntel</h1>
+          <div className="brand-lockup">
+            <img src="/logo-mark.svg" alt="SellerIntel logo" className="brand-logo" />
+            <h1 className="brand-title">SellerIntel</h1>
+          </div>
           <nav className="top-nav-list">
-            {dashboardPages.map(p => (
+            {visibleDashboardPages.map(p => (
               <button
                 key={p.id}
                 type="button"
@@ -421,6 +800,14 @@ export default function App() {
           </nav>
         </div>
         <div className="top-navbar-right">
+          <button
+            type="button"
+            className="theme-toggle-btn"
+            onClick={toggleTheme}
+          >
+            <span>{theme === "dark" ? "☀️" : "🌙"}</span>
+            <span>{theme === "dark" ? "Light" : "Dark"}</span>
+          </button>
           <div className="account-chip">
             <span className="account-label">User Account</span>
             <span className="account-email">{user.email}</span>
@@ -428,7 +815,7 @@ export default function App() {
           <button
             type="button"
             className="nav-item logout-btn"
-            onClick={() => setToken("")}
+            onClick={handleLogout}
           >
             <span>🚪</span>
             <span>Logout</span>
@@ -443,19 +830,21 @@ export default function App() {
             <input 
               className="search-input" 
               style={{ paddingLeft: '2.5rem' }}
-              placeholder={`Search ${page === 'inventory' ? 'products' : page === 'orders' ? 'orders' : 'anything'}...`} 
+              placeholder={`Search ${page === 'inventory' ? 'products' : page === 'orders' ? 'orders' : page === 'agents' ? 'agent notes' : page === 'admin' ? 'users or agents' : 'anything'}...`} 
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
             />
           </div>
-          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-            <div className="stat-change up" style={{ fontSize: '0.85rem', background: 'rgba(16, 185, 129, 0.1)', padding: '6px 12px', borderRadius: '999px' }}>
-              ● {overview.active_listings} Active Listings
+          {user.role !== "admin" && (
+            <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+              <div className="stat-change up" style={{ fontSize: '0.85rem', background: 'rgba(16, 185, 129, 0.1)', padding: '6px 12px', borderRadius: '999px' }}>
+                ● {overview.active_listings} Active Listings
+              </div>
+              <div style={{ fontSize: '0.85rem', background: 'rgba(245, 158, 11, 0.12)', color: 'var(--warning)', padding: '6px 12px', borderRadius: '999px', fontWeight: 600 }}>
+                ⚠ {lowStockProducts.length} Low Stock
+              </div>
             </div>
-            <div style={{ fontSize: '0.85rem', background: 'rgba(245, 158, 11, 0.12)', color: 'var(--warning)', padding: '6px 12px', borderRadius: '999px', fontWeight: 600 }}>
-              ⚠ {lowStockProducts.length} Low Stock
-            </div>
-          </div>
+          )}
         </header>
 
         {message && (
@@ -524,7 +913,7 @@ export default function App() {
                           <stop offset="95%" stopColor="var(--primary)" stopOpacity={0}/>
                         </linearGradient>
                       </defs>
-                      <CartesianGrid strokeDasharray="3 4" vertical={false} stroke="rgba(255,255,255,0.03)" />
+                      <CartesianGrid strokeDasharray="3 4" vertical={false} stroke="var(--chart-grid)" />
                       <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{fill: 'var(--text-muted)', fontSize: 10}} tickFormatter={formatShortDate} />
                       <YAxis axisLine={false} tickLine={false} tick={{fill: 'var(--text-muted)', fontSize: 10}} tickFormatter={val => `$${val}`} />
                       <Tooltip contentStyle={{background: 'var(--bg-accent)', border: '1px solid var(--glass-border)', borderRadius: '12px', backdropFilter: 'blur(10px)'}} />
@@ -554,7 +943,7 @@ export default function App() {
                       </Pie>
                       <Tooltip 
                         contentStyle={{background: 'var(--bg-accent)', border: '1px solid var(--glass-border)', borderRadius: '12px'}} 
-                        itemStyle={{color: '#fff'}}
+                        itemStyle={{color: 'var(--text-primary)'}}
                       />
                       <Legend iconType="circle" wrapperStyle={{fontSize: '10px', paddingTop: '10px'}} />
                     </PieChart>
@@ -570,7 +959,7 @@ export default function App() {
                         <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{m.marketplace}</span>
                         <span style={{ fontWeight: '700', fontSize: '0.8rem' }}>{m.listings}</span>
                       </div>
-                      <div style={{ height: '4px', background: 'rgba(255,255,255,0.05)', borderRadius: '10px', overflow: 'hidden' }}>
+                      <div style={{ height: '4px', background: 'var(--surface-soft)', borderRadius: '10px', overflow: 'hidden' }}>
                         <div style={{ height: '100%', background: COLORS[idx % COLORS.length], width: `${overview.total_listings ? (m.listings / overview.total_listings) * 100 : 0}%` }}></div>
                       </div>
                     </div>
@@ -587,16 +976,18 @@ export default function App() {
               <h3 style={{ fontFamily: 'Outfit', fontSize: '1.25rem' }}>Full Catalog Inventory</h3>
               <div style={{ display: 'flex', gap: '1rem' }}>
                 <button 
+                  type="button"
                   className="auth-btn" 
-                  style={{ width: 'auto', padding: '0.6rem 1.2rem', fontSize: '0.85rem', background: 'rgba(255,255,255,0.05)', color: '#fff' }}
+                  style={{ width: 'auto', padding: '0.6rem 1.2rem', fontSize: '0.85rem', background: 'var(--surface-soft)', color: 'var(--text-primary)' }}
                   onClick={() => downloadCSV(products, "inventory_report.csv")}
                 >
                   📥 Export CSV
                 </button>
                 <button 
+                  type="button"
                   className="auth-btn" 
                   style={{ width: 'auto', padding: '0.6rem 1.2rem', fontSize: '0.85rem' }}
-                  onClick={() => setIsAddingProduct(true)}
+                  onClick={onOpenCreateProductModal}
                 >
                   ➕ List New Product
                 </button>
@@ -638,7 +1029,7 @@ export default function App() {
                       <div style={{ fontWeight: '600' }}>{p.title}</div>
                       <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>ID: #{p.id}</div>
                     </td>
-                    <td><code style={{ background: 'rgba(255,255,255,0.05)', padding: '4px 8px', borderRadius: '6px', fontSize: '0.8rem' }}>{p.sku}</code></td>
+                    <td><code style={{ background: 'var(--surface-soft)', padding: '4px 8px', borderRadius: '6px', fontSize: '0.8rem' }}>{p.sku}</code></td>
                     <td>{p.marketplace}</td>
                     <td style={{ fontWeight: '700' }}>{formatCurrency(p.sell_price)}</td>
                     <td>
@@ -659,12 +1050,14 @@ export default function App() {
                     <td>
                       <div style={{ display: 'flex', gap: '0.5rem' }}>
                         <button 
+                          type="button"
                           onClick={() => setEditingProduct(p)} 
-                          style={{ background: 'rgba(255,255,255,0.05)', border: 'none', padding: '6px', borderRadius: '8px', cursor: 'pointer' }}
+                          style={{ background: 'var(--surface-soft)', border: 'none', padding: '6px', borderRadius: '8px', cursor: 'pointer', color: 'var(--text-primary)' }}
                         >
                           ✏️
                         </button>
                         <button 
+                          type="button"
                           onClick={() => onDeleteProduct(p.id)} 
                           style={{ background: 'rgba(239, 68, 68, 0.1)', border: 'none', padding: '6px', borderRadius: '8px', cursor: 'pointer' }}
                         >
@@ -672,6 +1065,7 @@ export default function App() {
                         </button>
                         {p.stock < LOW_STOCK_LIMIT && (
                           <button
+                            type="button"
                             onClick={() => onQuickRestock(p)}
                             style={{ background: 'rgba(245, 158, 11, 0.16)', border: '1px solid rgba(245, 158, 11, 0.3)', color: 'var(--warning)', padding: '6px 8px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}
                             disabled={restockingProductId === p.id}
@@ -724,16 +1118,18 @@ export default function App() {
                 >
                   Clear Dates
                 </button>
-                <button
-                  className="auth-btn"
+                <button 
+                  type="button"
+                  className="auth-btn" 
                   style={{ width: 'auto', padding: '0.55rem 1rem', fontSize: '0.85rem' }}
                   onClick={onOpenCreateOrderModal}
                 >
                   ➕ Create Order
                 </button>
                 <button 
+                  type="button"
                   className="auth-btn" 
-                  style={{ width: 'auto', padding: '0.55rem 1rem', fontSize: '0.85rem', background: 'rgba(255,255,255,0.05)', color: '#fff' }}
+                  style={{ width: 'auto', padding: '0.55rem 1rem', fontSize: '0.85rem', background: 'var(--surface-soft)', color: 'var(--text-primary)' }}
                   onClick={() => downloadCSV(filteredOrders, "order_history.csv")}
                 >
                   📥 Download History
@@ -771,10 +1167,345 @@ export default function App() {
           </div>
         )}
 
+        {page === "agents" && (
+          <div className="agent-grid">
+            <section className="card">
+              <div className="section-head">
+                <div>
+                  <h3 style={{ fontFamily: 'Outfit', fontSize: '1.25rem' }}>Your Agent</h3>
+                  <p className="section-copy">Create a Foundry agent or link an existing one for your account.</p>
+                </div>
+                {currentAgent && (
+                  <button
+                    type="button"
+                    className="danger-btn"
+                    onClick={onDeleteAgent}
+                    disabled={agentBusy}
+                  >
+                    {agentBusy ? "Removing..." : "Remove Current Agent"}
+                  </button>
+                )}
+              </div>
+
+              <p className="section-copy" style={{ marginTop: '1rem' }}>
+                Each user can have only one agent.
+              </p>
+
+              <form onSubmit={onCreateAgent} className="auth-form" style={{ marginTop: '1.5rem' }}>
+                <div className="input-group">
+                  <span className="input-label">Agent Name</span>
+                  <input
+                    className="auth-input"
+                    value={agentForm.agent_name}
+                    onChange={e => setAgentForm({ ...agentForm, agent_name: e.target.value })}
+                    placeholder="WillowAgent"
+                    required
+                  />
+                </div>
+
+                <div className="input-group">
+                  <span className="input-label">Existing Agent ID (Optional)</span>
+                  <input
+                    className="auth-input"
+                    value={agentForm.existing_agent_id || ""}
+                    onChange={e => setAgentForm({ ...agentForm, existing_agent_id: e.target.value })}
+                    placeholder="WillowAgent:1"
+                  />
+                </div>
+
+                <div className="input-group">
+                  <span className="input-label">Project Endpoint (Optional)</span>
+                  <input
+                    className="auth-input"
+                    value={agentForm.project_endpoint || ""}
+                    onChange={e => setAgentForm({ ...agentForm, project_endpoint: e.target.value })}
+                    placeholder="https://.../api/projects/amar-0558"
+                  />
+                </div>
+
+                <div className="input-group">
+                  <span className="input-label">Model Deployment (Optional)</span>
+                  <input
+                    className="auth-input"
+                    value={agentForm.model_deployment_name || ""}
+                    onChange={e => setAgentForm({ ...agentForm, model_deployment_name: e.target.value })}
+                    placeholder="gpt-5.2-chat"
+                  />
+                </div>
+
+                <div className="input-group">
+                  <span className="input-label">Instructions</span>
+                  <textarea
+                    className="agent-textarea"
+                    value={agentForm.instructions || ""}
+                    onChange={e => setAgentForm({ ...agentForm, instructions: e.target.value })}
+                    placeholder="Help with dashboard, products, inventory, and orders."
+                  />
+                </div>
+
+                <button type="submit" className="auth-btn" disabled={agentBusy}>
+                  {agentBusy ? "Saving..." : currentAgent ? "Update Agent" : "Create Agent"}
+                </button>
+              </form>
+
+              <div className="agent-status-card">
+                <h4>Current Agent</h4>
+                {currentAgent ? (
+                  <div className="agent-meta-list">
+                    <div><strong>Name:</strong> {currentAgent.agent_name}</div>
+                    <div><strong>Version:</strong> {currentAgent.agent_version}</div>
+                    <div><strong>Project:</strong> {currentAgent.project_endpoint || "Using API default"}</div>
+                    <div><strong>Saved:</strong> {formatShortDate(currentAgent.updated_at)}</div>
+                  </div>
+                ) : (
+                  <p className="section-copy" style={{ marginTop: '0.75rem' }}>
+                    No agent saved for this user yet.
+                  </p>
+                )}
+              </div>
+            </section>
+
+            <section className="card">
+              <div className="section-head">
+                <div>
+                  <h3 style={{ fontFamily: 'Outfit', fontSize: '1.25rem' }}>Use Agent</h3>
+                  <p className="section-copy">Chat with the current agent after it is created.</p>
+                </div>
+                <button
+                  type="button"
+                  className="chip-btn"
+                  onClick={onResetAgentChat}
+                  disabled={!currentAgent || agentChatBusy}
+                >
+                  Clear Chat
+                </button>
+              </div>
+
+              {!currentAgent ? (
+                <div className="empty-panel">
+                  Create or link an agent first. Start the agent API with <code>./azure_tools_api/run_dev.sh</code>.
+                </div>
+              ) : (
+                <>
+                  <div className="agent-chat-log">
+                    {agentHistory.length === 0 ? (
+                      <div className="empty-panel">
+                        No conversation yet. Ask something like <code>Show me my dashboard summary</code>.
+                      </div>
+                    ) : (
+                      agentHistory.map((entry, index) => (
+                        <div key={`${entry.role}-${index}`} className={`agent-message ${entry.role}`}>
+                          <span className="agent-role">{entry.role === "user" ? "You" : currentAgent.agent_name}</span>
+                          <div className="agent-message-content">{renderAgentContent(entry.content)}</div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <form onSubmit={onSendAgentPrompt} className="auth-form" style={{ marginTop: '1rem' }}>
+                    <div className="input-group">
+                      <span className="input-label">Prompt</span>
+                      <textarea
+                        className="agent-textarea"
+                        value={agentPrompt}
+                        onChange={e => setAgentPrompt(e.target.value)}
+                        placeholder="Ask the agent to summarize revenue, list low stock items, or create an order."
+                      />
+                    </div>
+                    <button type="submit" className="auth-btn" disabled={agentChatBusy || !agentPrompt.trim()}>
+                      {agentChatBusy ? "Sending..." : "Send to Agent"}
+                    </button>
+                  </form>
+                </>
+              )}
+            </section>
+          </div>
+        )}
+
+        {page === "admin" && user?.role === "admin" && (
+          <>
+            <div className="section-head" style={{ marginBottom: '1.5rem' }}>
+              <div>
+                <h3 style={{ fontFamily: 'Outfit', fontSize: '1.4rem' }}>Admin Control</h3>
+                <p className="section-copy">Monitor users, subscription mix, and the agents they use.</p>
+              </div>
+              <button
+                type="button"
+                className="auth-btn"
+                style={{ width: 'auto', padding: '0.75rem 1rem', fontSize: '0.9rem' }}
+                onClick={() => refreshAdminData(token)}
+                disabled={adminLoading}
+              >
+                {adminLoading ? "Refreshing..." : "Refresh Admin Data"}
+              </button>
+            </div>
+
+            <div className="stats-grid">
+              <div className="card stat-card">
+                <span className="stat-label">Total Users</span>
+                <span className="stat-value">{formatInteger(adminSummary?.total_users || 0)}</span>
+              </div>
+              <div className="card stat-card">
+                <span className="stat-label">Admin Accounts</span>
+                <span className="stat-value">{formatInteger(adminSummary?.admin_users || 0)}</span>
+              </div>
+              <div className="card stat-card">
+                <span className="stat-label">Demo Plans</span>
+                <span className="stat-value">{formatInteger(adminSummary?.demo_subscriptions || 0)}</span>
+              </div>
+              <div className="card stat-card">
+                <span className="stat-label">Users With Agents</span>
+                <span className="stat-value">{formatInteger(adminSummary?.users_with_agents || 0)}</span>
+              </div>
+              <div className="card stat-card">
+                <span className="stat-label">Total Orders</span>
+                <span className="stat-value">{formatInteger(adminSummary?.total_orders || 0)}</span>
+              </div>
+              <div className="card stat-card">
+                <span className="stat-label">Platform Sales</span>
+                <span className="stat-value">{formatCurrency(adminSummary?.total_sales || 0)}</span>
+              </div>
+            </div>
+
+            <div className="card" style={{ marginBottom: '1.5rem' }}>
+              <h3 style={{ marginBottom: '1rem', fontFamily: 'Outfit', fontSize: '1.1rem' }}>Subscriptions</h3>
+              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                {adminSubscriptions.map(subscription => (
+                  <div key={subscription.subscription_type} className="account-chip">
+                    <span className="account-label">{subscription.subscription_type}</span>
+                    <span className="account-email">{subscription.users_count} user(s)</span>
+                  </div>
+                ))}
+                {adminSubscriptions.length === 0 && (
+                  <span className="section-copy">No subscription data yet.</span>
+                )}
+              </div>
+            </div>
+
+            <div className="card" style={{ marginBottom: '1.5rem' }}>
+              <div className="section-head">
+                <div>
+                  <h3 style={{ fontFamily: 'Outfit', fontSize: '1.1rem' }}>User Usage</h3>
+                  <p className="section-copy">How much each user is using the website and which agent is attached.</p>
+                </div>
+                <span className="section-copy">Showing {filteredAdminUsers.length} user(s)</span>
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>User</th>
+                    <th>Role</th>
+                    <th>Subscription</th>
+                    <th>Listings</th>
+                    <th>Orders</th>
+                    <th>Sales</th>
+                    <th>Agent</th>
+                    <th>Joined</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredAdminUsers.map(entry => (
+                    <tr key={entry.id}>
+                      <td>
+                        <div style={{ fontWeight: 700 }}>{entry.name}</div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{entry.email}</div>
+                      </td>
+                      <td>{entry.role}</td>
+                      <td>{entry.subscription_type}</td>
+                      <td>{formatInteger(entry.products_count)}</td>
+                      <td>{formatInteger(entry.orders_count)}</td>
+                      <td>{formatCurrency(entry.total_sales)}</td>
+                      <td>
+                        {entry.agent_name ? (
+                          <>
+                            <div style={{ fontWeight: 700 }}>{entry.agent_name}</div>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                              v{entry.agent_version} · {entry.agent_updated_at ? formatShortDate(entry.agent_updated_at) : "No recent update"}
+                            </div>
+                          </>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)' }}>No agent</span>
+                        )}
+                      </td>
+                      <td>{formatShortDate(entry.created_at)}</td>
+                    </tr>
+                  ))}
+                  {filteredAdminUsers.length === 0 && (
+                    <tr>
+                      <td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1.25rem' }}>
+                        No users found for the current search.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="card">
+              <div className="section-head">
+                <div>
+                  <h3 style={{ fontFamily: 'Outfit', fontSize: '1.1rem' }}>Agent Usage</h3>
+                  <p className="section-copy">Current agent records and the usage footprint attached to them.</p>
+                </div>
+                <span className="section-copy">Showing {filteredAdminAgents.length} agent record(s)</span>
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Seller</th>
+                    <th>Subscription</th>
+                    <th>Agent</th>
+                    <th>Listings</th>
+                    <th>Orders</th>
+                    <th>Sales</th>
+                    <th>Updated</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredAdminAgents.map(entry => (
+                    <tr key={`${entry.seller_id}-${entry.agent_name}-${entry.agent_version}`}>
+                      <td>
+                        <div style={{ fontWeight: 700 }}>{entry.seller_name}</div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{entry.seller_email}</div>
+                      </td>
+                      <td>{entry.subscription_type}</td>
+                      <td>
+                        <div style={{ fontWeight: 700 }}>{entry.agent_name}</div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>v{entry.agent_version}</div>
+                      </td>
+                      <td>{formatInteger(entry.products_count)}</td>
+                      <td>{formatInteger(entry.orders_count)}</td>
+                      <td>{formatCurrency(entry.total_sales)}</td>
+                      <td>{formatShortDate(entry.agent_updated_at)}</td>
+                    </tr>
+                  ))}
+                  {filteredAdminAgents.length === 0 && (
+                    <tr>
+                      <td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1.25rem' }}>
+                        No agent usage data found for the current search.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+
       </main>
 
       {editingProduct && (
-        <div className="auth-shell" style={{ position: 'fixed', zIndex: 1000, background: 'rgba(0,0,0,0.8)' }}>
+        <div
+          className="auth-shell"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1000,
+            background: 'rgba(0,0,0,0.8)',
+            padding: '1rem',
+            overflowY: 'auto',
+          }}
+        >
           <div className="auth-card" style={{ width: '100%', maxWidth: '500px' }}>
             <h1>Edit Inventory</h1>
             <p>Modify stock and pricing for <strong>{editingProduct.title}</strong></p>
@@ -823,7 +1554,7 @@ export default function App() {
                 <button 
                   type="button" 
                   className="auth-btn" 
-                  style={{ flex: 1, background: 'rgba(255,255,255,0.05)', color: '#fff' }} 
+                  style={{ flex: 1, background: 'var(--surface-soft)', color: 'var(--text-primary)' }} 
                   onClick={() => setEditingProduct(null)}
                 >
                   Cancel
@@ -835,7 +1566,17 @@ export default function App() {
       )}
 
       {isAddingOrder && (
-        <div className="auth-shell" style={{ position: 'fixed', zIndex: 1000, background: 'rgba(0,0,0,0.8)' }}>
+        <div
+          className="auth-shell"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1000,
+            background: 'rgba(0,0,0,0.8)',
+            padding: '1rem',
+            overflowY: 'auto',
+          }}
+        >
           <div className="auth-card" style={{ width: '100%', maxWidth: '520px' }}>
             <h1>Create Order</h1>
             <p>Create a quick order using one product line item.</p>
@@ -857,12 +1598,12 @@ export default function App() {
                   <span className="input-label">Marketplace</span>
                   <select
                     className="auth-input"
-                    style={{ background: 'rgba(255,255,255,0.05)', color: '#fff', border: '1px solid var(--glass-border)' }}
+                    style={{ background: 'var(--surface-soft)', color: 'var(--text-primary)', border: '1px solid var(--glass-border)' }}
                     value={newOrder.marketplace}
                     onChange={e => setNewOrder({ ...newOrder, marketplace: e.target.value })}
                   >
                     {["Amazon", "eBay", "Walmart", "Target", "Etsy", "Shopify"].map(m => (
-                      <option key={m} value={m} style={{ background: '#111' }}>{m}</option>
+                      <option key={m} value={m} style={{ background: 'var(--bg-accent)', color: 'var(--text-primary)' }}>{m}</option>
                     ))}
                   </select>
                 </div>
@@ -870,7 +1611,7 @@ export default function App() {
                   <span className="input-label">Product</span>
                   <select
                     className="auth-input"
-                    style={{ background: 'rgba(255,255,255,0.05)', color: '#fff', border: '1px solid var(--glass-border)' }}
+                    style={{ background: 'var(--surface-soft)', color: 'var(--text-primary)', border: '1px solid var(--glass-border)' }}
                     value={newOrder.product_id}
                     onChange={e => {
                       const productId = Number(e.target.value);
@@ -884,7 +1625,7 @@ export default function App() {
                     }}
                   >
                     {products.map(p => (
-                      <option key={p.id} value={p.id} style={{ background: '#111' }}>
+                      <option key={p.id} value={p.id} style={{ background: 'var(--bg-accent)', color: 'var(--text-primary)' }}>
                         {p.sku} • {p.title}
                       </option>
                     ))}
@@ -931,7 +1672,7 @@ export default function App() {
                 <button 
                   type="button" 
                   className="auth-btn" 
-                  style={{ flex: 1, background: 'rgba(255,255,255,0.05)', color: '#fff' }} 
+                  style={{ flex: 1, background: 'var(--surface-soft)', color: 'var(--text-primary)' }} 
                   onClick={() => setIsAddingOrder(false)}
                 >
                   Cancel
@@ -943,7 +1684,17 @@ export default function App() {
       )}
 
       {isAddingProduct && (
-        <div className="auth-shell" style={{ position: 'fixed', zIndex: 1000, background: 'rgba(0,0,0,0.8)' }}>
+        <div
+          className="auth-shell"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1000,
+            background: 'rgba(0,0,0,0.8)',
+            padding: '1rem',
+            overflowY: 'auto',
+          }}
+        >
           <div className="auth-card" style={{ width: '100%', maxWidth: '500px' }}>
             <h1>List New Product</h1>
             <p>Create a new listing across your connected marketplaces.</p>
@@ -975,12 +1726,12 @@ export default function App() {
                   <span className="input-label">Marketplace</span>
                   <select 
                     className="auth-input" 
-                    style={{ background: 'rgba(255,255,255,0.05)', color: '#fff', border: '1px solid var(--glass-border)' }}
+                    style={{ background: 'var(--surface-soft)', color: 'var(--text-primary)', border: '1px solid var(--glass-border)' }}
                     value={newProduct.marketplace} 
                     onChange={e => setNewProduct({...newProduct, marketplace: e.target.value})} 
                   >
                     {["Amazon", "eBay", "Walmart", "Target", "Etsy", "Shopify"].map(m => (
-                      <option key={m} value={m} style={{ background: '#111' }}>{m}</option>
+                      <option key={m} value={m} style={{ background: 'var(--bg-accent)', color: 'var(--text-primary)' }}>{m}</option>
                     ))}
                   </select>
                 </div>
@@ -1019,7 +1770,7 @@ export default function App() {
                 <button 
                   type="button" 
                   className="auth-btn" 
-                  style={{ flex: 1, background: 'rgba(255,255,255,0.05)', color: '#fff' }} 
+                  style={{ flex: 1, background: 'var(--surface-soft)', color: 'var(--text-primary)' }} 
                   onClick={() => setIsAddingProduct(false)}
                 >
                   Cancel

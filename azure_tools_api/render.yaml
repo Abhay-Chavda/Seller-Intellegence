@@ -19,13 +19,21 @@ services:
         value: "120"
       - key: CORS_ORIGINS
         value: http://localhost:5173,http://127.0.0.1:5173
+      - key: AZURE_AI_PROJECT_ENDPOINT
+        sync: false
       - key: PROJECT_ENDPOINT
         sync: false
+      - key: AZURE_EXISTING_AIPROJECT_ENDPOINT
+        sync: false
       - key: MODEL_DEPLOYMENT_NAME
+        sync: false
+      - key: AZURE_AI_MODEL_DEPLOYMENT_NAME
         sync: false
       - key: AGENT_NAME_PREFIX
         value: seller-agent
       - key: PUBLIC_BASE_URL
+        sync: false
+      - key: AZURE_EXISTING_AGENT_ID
         sync: false
       - key: AZURE_CLIENT_ID
         sync: false

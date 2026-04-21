@@ -79,6 +79,7 @@ class AgentOut(BaseModel):
     agent_id: str
     agent_name: str
     agent_version: str
+    project_endpoint: str | None = None
     instructions: str
     created_at: datetime
     updated_at: datetime
@@ -93,11 +94,41 @@ class CurrentAgentResponse(BaseModel):
 
 class AgentCreateRequest(BaseModel):
     instructions: str | None = None
+    agent_name: str = Field(
+        min_length=1,
+        max_length=255,
+        description="Agent name to create or link. If existing_agent_id is provided, this must match its agent name.",
+    )
+    existing_agent_id: str | None = Field(
+        default=None,
+        description='Optional existing Foundry agent reference, for example "WillowAgent:1".',
+    )
+    project_endpoint: str | None = Field(
+        default=None,
+        description="Optional Foundry project endpoint for this agent record.",
+    )
+    model_deployment_name: str | None = Field(
+        default=None,
+        description="Optional model deployment override used only when creating a new Foundry agent.",
+    )
+
+    @model_validator(mode="after")
+    def validate_agent_reference(self) -> "AgentCreateRequest":
+        if self.existing_agent_id:
+            raw_value = self.existing_agent_id.strip().strip('"').strip("'")
+            agent_name = raw_value.rsplit(":", 1)[0].strip() if ":" in raw_value else raw_value
+            if agent_name and agent_name.lower() != self.agent_name.lower():
+                raise ValueError("agent_name must match the name inside existing_agent_id")
+        return self
 
 
 class AgentCreateResponse(BaseModel):
     created: bool
     agent: AgentOut
+
+
+class AgentDeleteResponse(BaseModel):
+    deleted: bool
 
 
 class AgentChatMessage(BaseModel):

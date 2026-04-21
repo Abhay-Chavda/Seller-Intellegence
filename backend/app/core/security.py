@@ -5,7 +5,10 @@ from passlib.context import CryptContext
 
 from app.core.config import get_settings
 
-pwd_context = CryptContext(schemes=["bcrypt", "pbkdf2_sha256"], deprecated="auto")
+# Keep password hashing simple and stable for this project.
+# The local environment currently has a bcrypt/passlib compatibility problem,
+# while pbkdf2_sha256 works reliably and remains fully supported by passlib.
+pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 settings = get_settings()
 
 

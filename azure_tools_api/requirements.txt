@@ -1,4 +1,13 @@
--r ../backend/requirements.txt
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg[binary]
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
+pydantic-settings
+python-dotenv
+email-validator
 azure-ai-projects
 azure-identity
 openai

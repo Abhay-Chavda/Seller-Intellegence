@@ -1,4 +1,11 @@
-const API_BASE_URL = "http://localhost:8000";
+const viteEnv = (import.meta as ImportMeta & {
+  env?: Record<string, string | undefined>;
+}).env || {};
+
+const API_BASE_URL =
+  viteEnv.VITE_API_BASE_URL || (viteEnv.DEV ? "http://127.0.0.1:8000" : "/api");
+const AGENT_API_BASE_URL =
+  viteEnv.VITE_AGENT_API_BASE_URL || (viteEnv.DEV ? "http://127.0.0.1:8001" : "/agent-api");
 
 export type AuthToken = {
   access_token: string;
@@ -9,6 +16,8 @@ export type User = {
   id: number;
   name: string;
   email: string;
+  role: string;
+  subscription_type: string;
 };
 
 export type Product = {
@@ -107,12 +116,94 @@ export type Order = {
   }>;
 };
 
+export type Agent = {
+  id: number;
+  seller_id: number;
+  agent_id: string;
+  agent_name: string;
+  agent_version: string;
+  project_endpoint: string | null;
+  instructions: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AgentChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+export type AgentCreatePayload = {
+  agent_name: string;
+  instructions?: string;
+  existing_agent_id?: string;
+  project_endpoint?: string;
+  model_deployment_name?: string;
+};
+
+export type AdminSummary = {
+  total_users: number;
+  admin_users: number;
+  demo_subscriptions: number;
+  users_with_agents: number;
+  total_orders: number;
+  total_products: number;
+  total_sales: number;
+};
+
+export type AdminSubscriptionStat = {
+  subscription_type: string;
+  users_count: number;
+};
+
+export type AdminUserUsage = {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+  subscription_type: string;
+  created_at: string;
+  products_count: number;
+  orders_count: number;
+  total_sales: number;
+  last_order_at: string | null;
+  last_product_update_at: string | null;
+  agent_name: string | null;
+  agent_version: string | null;
+  project_endpoint: string | null;
+  agent_updated_at: string | null;
+};
+
+export type AdminAgentUsage = {
+  seller_id: number;
+  seller_name: string;
+  seller_email: string;
+  subscription_type: string;
+  agent_name: string;
+  agent_version: string;
+  project_endpoint: string | null;
+  agent_updated_at: string;
+  orders_count: number;
+  products_count: number;
+  total_sales: number;
+};
+
+export class ApiError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {},
-  token?: string
+  token?: string,
+  baseUrl = API_BASE_URL
 ): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(`${baseUrl}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -141,7 +232,7 @@ async function request<T>(
         }
       }
     }
-    throw new Error(errMsg);
+    throw new ApiError(response.status, errMsg);
   }
 
   if (response.status === 204) {
@@ -171,6 +262,18 @@ export const api = {
   },
   getSummary(token: string) {
     return request<DashboardSummary>("/dashboard/summary", { method: "GET" }, token);
+  },
+  getAdminSummary(token: string) {
+    return request<AdminSummary>("/admin/summary", { method: "GET" }, token);
+  },
+  getAdminUsers(token: string) {
+    return request<AdminUserUsage[]>("/admin/users", { method: "GET" }, token);
+  },
+  getAdminSubscriptions(token: string) {
+    return request<AdminSubscriptionStat[]>("/admin/subscriptions", { method: "GET" }, token);
+  },
+  getAdminAgentUsage(token: string) {
+    return request<AdminAgentUsage[]>("/admin/agents/usage", { method: "GET" }, token);
   },
   listProducts(token: string) {
     return request<Product[]>("/products", { method: "GET" }, token);
@@ -220,6 +323,40 @@ export const api = {
         body: JSON.stringify(payload),
       },
       token
+    );
+  },
+  getCurrentAgent(token: string) {
+    return request<{ agent: Agent | null }>("/agent/current", { method: "GET" }, token, AGENT_API_BASE_URL);
+  },
+  createAgent(token: string, payload: AgentCreatePayload) {
+    return request<{ created: boolean; agent: Agent }>(
+      "/agent/create",
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+      token,
+      AGENT_API_BASE_URL
+    );
+  },
+  deleteAgent(token: string) {
+    return request<{ deleted: boolean }>("/agent/current", { method: "DELETE" }, token, AGENT_API_BASE_URL);
+  },
+  resetAgentChat(token: string) {
+    return request<{ ok: boolean }>("/agent/chat/reset", { method: "POST" }, token, AGENT_API_BASE_URL);
+  },
+  chatWithAgent(
+    token: string,
+    payload: { prompt: string; history?: AgentChatMessage[]; reset_history?: boolean }
+  ) {
+    return request<{ reply: string; history: AgentChatMessage[] }>(
+      "/agent/chat",
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+      token,
+      AGENT_API_BASE_URL
     );
   },
 };

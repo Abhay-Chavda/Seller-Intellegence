@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from copy import deepcopy
 from typing import Any, Callable, TYPE_CHECKING
 
 from pydantic import BaseModel, TypeAdapter
@@ -30,8 +31,48 @@ class ToolSpec:
 
 def json_schema(model_type: Any) -> dict[str, Any]:
     if hasattr(model_type, "model_json_schema"):
-        return model_type.model_json_schema()
-    return TypeAdapter(model_type).json_schema()
+        schema = model_type.model_json_schema()
+    else:
+        schema = TypeAdapter(model_type).json_schema()
+    return inline_json_refs(schema)
+
+
+def inline_json_refs(schema: dict[str, Any]) -> dict[str, Any]:
+    root = deepcopy(schema)
+    defs = root.get("$defs", {})
+    legacy_defs = root.get("definitions", {})
+
+    def resolve_ref(ref: str) -> Any:
+        if ref.startswith("#/$defs/"):
+            key = ref.split("/", 2)[-1]
+            return defs.get(key)
+        if ref.startswith("#/definitions/"):
+            key = ref.split("/", 2)[-1]
+            return legacy_defs.get(key)
+        return None
+
+    def walk(node: Any) -> Any:
+        if isinstance(node, dict):
+            if "$ref" in node:
+                target = resolve_ref(str(node["$ref"]))
+                if target is None:
+                    return {key: walk(value) for key, value in node.items() if key != "$ref"}
+                merged = walk(deepcopy(target))
+                extras = {key: walk(value) for key, value in node.items() if key != "$ref"}
+                if isinstance(merged, dict):
+                    merged.update(extras)
+                    return merged
+                return merged
+            return {
+                key: walk(value)
+                for key, value in node.items()
+                if key not in {"$defs", "definitions"}
+            }
+        if isinstance(node, list):
+            return [walk(item) for item in node]
+        return node
+
+    return walk(root)
 
 
 def _dashboard_overview(
@@ -227,7 +268,7 @@ def list_tool_definitions() -> list[ToolDefinition]:
         ToolDefinition(
             name=spec.name,
             description=spec.description,
-            input_schema=spec.args_model.model_json_schema(),
+            input_schema=json_schema(spec.args_model),
             output_schema=spec.output_schema,
         )
         for spec in specs.values()
